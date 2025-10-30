@@ -1,61 +1,89 @@
-
-import type { Handler } from "@netlify/functions";
+// netlify/functions/uploadRoster.ts
+import type { Handler, HandlerEvent } from "@netlify/functions";
+import Busboy from "busboy"; // Corrected import style
 import { getAdmin, verifyBearerUid } from "./_lib/firebaseAdmin";
-import * as Busboy from "busboy";
-import { randomBytes } from "crypto";
+import { Buffer } from "buffer"; // Ensure Buffer is available
+import { v4 as uuidv4 } from "uuid";
 
-function json(statusCode:number, body:any){
-  return { statusCode, headers: { "content-type":"application/json" }, body: JSON.stringify(body) }
+// This file handles the multipart form data upload
+// The actual file processing happens in processRoster.ts
+
+function json(statusCode: number, body: any) {
+  return { statusCode, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (event: HandlerEvent) => {
   try {
-    if (event.httpMethod !== "POST") return json(405, { error:"Use POST" });
-    const period = Number(event.queryStringParameters?.period ?? "");
-    const quarter = String(event.queryStringParameters?.quarter ?? "").toUpperCase();
+    if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
+    if (!event.body || !event.isBase64Encoded) return json(400, { error: "Missing multipart body" });
+
     const uid = await verifyBearerUid(event.headers.authorization);
-
-    if (!Number.isInteger(period) || period<1 || period>8) return json(400, { error:"period must be 1-8" });
-    if (!/^Q[1-4]$/.test(quarter)) return json(400, { error:"quarter must be Q1-Q4" });
-
-    if (!event.headers["content-type"]?.includes("multipart/form-data")) return json(400, { error:"Content-Type must be multipart/form-data" });
-
-    const busboy = Busboy({
-      headers: event.headers as any,
-      limits: { files: 1, fileSize: 15 * 1024 * 1024 }
-    });
-
-    const chunks: Buffer[] = [];
-    let filename = "roster";
-    let mime = "application/octet-stream";
-
-    const done = new Promise<Buffer>((resolve, reject)=>{
-      busboy.on("file", (_name, file, info) => {
-        filename = info.filename || "roster";
-        mime = info.mimeType || "application/octet-stream";
-        file.on("data", d => chunks.push(d as Buffer));
-        file.on("limit", () => reject(new Error("File too large")));
-      });
-      busboy.on("error", reject);
-      busboy.on("finish", () => resolve(Buffer.concat(chunks)));
-    });
-
-    busboy.end(Buffer.from(event.body ?? "", event.isBase64Encoded ? "base64" : "utf8"));
-    const buffer = await done;
-    if (!buffer.length) return json(400, { error:"No file received" });
+    if (!uid) return json(401, { error: "Unauthorized" });
 
     const admin = getAdmin();
-    const bucket = admin.storage().bucket();
-    const uploadId = `upl_${Date.now()}_${randomBytes(4).toString("hex")}`;
-    const objectPath = `users/${uid}/uploads/${uploadId}/${filename}`;
-    await bucket.file(objectPath).save(buffer, { metadata: { contentType: mime }});
-    await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).set({
-      filename, mimetype: mime, size: buffer.length, objectPath, period, quarter,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    const [period, quarter] = [event.queryStringParameters?.period, event.queryStringParameters?.quarter];
+
+    // Check if period/quarter are valid before proceeding
+    if (!period || !quarter) return json(400, { error: "Missing period or quarter in query params" });
+
+    // Ensure the busboy object is initialized correctly
+    const busboy = Busboy({ headers: event.headers }); // Fix: Call Busboy as a function/constructor
+    
+    const filePromise = new Promise<{ filename: string, mimetype: string, size: number, buffer: Buffer }>((resolve, reject) => {
+      let chunks: Buffer[] = [];
+      let filename = "";
+      let mimetype = "";
+      let size = 0;
+
+      busboy.on("file", (_name: string, file: NodeJS.ReadableStream, info: { filename: string, encoding: string, mimeType: string }) => {
+        // Explicitly type parameters (TS7006 fix)
+        filename = info.filename;
+        mimetype = info.mimeType;
+
+        file.on("data", (d: Buffer) => { // Explicitly type 'd' as Buffer
+          chunks.push(d);
+          size += d.length;
+        });
+
+        file.on("end", () => {
+          resolve({ filename, mimetype, size, buffer: Buffer.concat(chunks) });
+        });
+      });
+
+      busboy.on("error", reject);
+      busboy.on("finish", () => {
+        // If no file was found, but process finished, reject
+        if (!filename) reject(new Error("No file uploaded."));
+      });
+      
+      // Write the event body (buffer) to busboy to start parsing
+      busboy.end(Buffer.from(event.body, "base64"));
     });
 
-    return json(200, { uploadId, filename, mime, size: buffer.length });
-  } catch (e:any) {
-    return json(e.status||500, { error: e.message||"Internal error" });
+    const { filename, mimetype, buffer } = await filePromise;
+    const objectPath = `rosters/${uid}/${uuidv4()}-${filename}`;
+    const uploadId = uuidv4();
+
+    // 1. Upload to Firebase Storage
+    const bucket = admin.storage().bucket();
+    await bucket.file(objectPath).save(buffer, { metadata: { contentType: mimetype } });
+
+    // 2. Write metadata to Firestore
+    await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).set({
+      filename,
+      mimetype,
+      objectPath,
+      period: Number(period),
+      quarter: quarter.toUpperCase(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      size: buffer.length
+    });
+
+    return json(200, { uploadId, filename, size: buffer.length });
+
+  } catch (e: any) {
+    // Log error for debugging
+    console.error("Upload error:", e); 
+    return json(e.status || 500, { error: e.message || "Internal server error during upload." });
   }
-}
+};
