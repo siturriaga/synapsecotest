@@ -1,14 +1,35 @@
-
 [build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+command = "npm run build"
+publish = "dist"
+functions = "netlify/functions"
 
 [functions]
-  node_bundler = "esbuild"
-  external_node_modules = ["firebase-admin","xlsx","mammoth","pdf-parse","busboy"]
+external_node_modules = ["firebase-admin","xlsx","mammoth","pdf-parse","busboy"]
+node_bundler = "esbuild"
+
+[[headers]]
+for = "/*"
+  [headers.values]
+  Content-Security-Policy = """
+    default-src 'self';
+    script-src 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com;
+    script-src-elem 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com;
+    connect-src 'self'
+      https://firestore.googleapis.com
+      https://identitytoolkit.googleapis.com
+      https://securetoken.googleapis.com
+      https://www.googleapis.com
+      https://www.googleapis.com/oauth2/v3/token;
+    img-src 'self' data: https:;
+    style-src 'self' 'unsafe-inline';
+    font-src 'self' https://fonts.gstatic.com data:;
+    frame-src 'self' https://*.google.com https://*.firebaseapp.com;
+    frame-ancestors 'none';
+    base-uri 'self';
+    object-src 'none';
+  """
 
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200
