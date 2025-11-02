@@ -1,11 +1,11 @@
 // netlify/functions/processRoster.ts
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
-import { getAdmin, verifyBearerUid } from "./_lib/firebaseAdmin";
+import { Buffer } from "buffer";
+import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as ExcelJS from 'exceljs'; 
 
-type Buffer = NodeJS.Buffer; 
 type Mode = "preview" | "commit";
 
 function json(statusCode: number, body: any) {
@@ -29,9 +29,47 @@ async function getUpload(uid: string, uploadId: string) {
   const rec = await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).get();
   if (!rec.exists) { const e: any = new Error("uploadId not found"); e.status = 404; throw e; }
   const data = rec.data()!;
-  const bucket = admin.storage().bucket();
-  const [buf] = await bucket.file(data.objectPath).download();
-  return { buffer: buf, meta: data };
+  const storageInfo: any = data.storage;
+  const inline = data.inlineData || storageInfo?.data;
+
+  if (inline) {
+    return { buffer: Buffer.from(inline, "base64"), meta: data };
+  }
+
+  if (storageInfo?.kind === "bucket" && storageInfo.objectPath) {
+    const bucket = getOptionalStorageBucket();
+    if (!bucket) {
+      const err: any = new Error(
+        "Roster upload references Firebase Storage but FIREBASE_STORAGE_BUCKET is not configured. Re-upload the roster or set the env var."
+      );
+      err.status = 500;
+      throw err;
+    }
+    try {
+      const [buf] = await bucket.file(storageInfo.objectPath).download();
+      return { buffer: buf, meta: data };
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      const bucketMissing = error?.code === 404 || /bucket does not exist/i.test(message);
+      const err: any = new Error(
+        bucketMissing
+          ? "Configured Firebase Storage bucket was not found. Reconfigure FIREBASE_STORAGE_BUCKET or upload a new roster."
+          : "Unable to read roster from Firebase Storage. Try re-uploading the file."
+      );
+      err.status = 500;
+      throw err;
+    }
+  }
+
+  const bucket = getOptionalStorageBucket();
+  if (bucket && data.objectPath) {
+    const [buf] = await bucket.file(data.objectPath).download();
+    return { buffer: buf, meta: data };
+  }
+
+  const e: any = new Error("Roster upload source unavailable");
+  e.status = 500;
+  throw e;
 }
 
 /**
@@ -128,6 +166,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
     const admin = getAdmin();
     const { buffer, meta } = await getUpload(uid, uploadId);
+    const storageWarning: string | undefined = meta.storageWarning;
     const name = String(meta.filename || "").toLowerCase();
     const mime = String(meta.mimetype || "").toLowerCase();
 
@@ -174,7 +213,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     };
 
     if (mode === 'preview') {
-      return json(200, { rows: reviewed, stats });
+      return json(200, { rows: reviewed, stats, ...(storageWarning ? { storageWarning } : {}) });
     }
 
     // commit
@@ -193,7 +232,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     });
 
     await batch.commit();
-    return json(200, { written, skipped, collection: `users/${uid}/roster` });
+    return json(200, { written, skipped, collection: `users/${uid}/roster`, ...(storageWarning ? { storageWarning } : {}) });
   } catch (e: any) {
     return json(e.status || 500, { error: e.message || "Internal error" });
   }

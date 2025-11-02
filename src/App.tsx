@@ -1,54 +1,45 @@
-
-import { useEffect, useState } from 'react'
-import { Route, Switch, Link, useLocation } from 'wouter'
-import { onAuth, googleSignIn, logout } from './firebase'
-import Dashboard from './pages/Dashboard'
-import Roster from './pages/Roster'
-import Assignments from './pages/Assignments'
-import Standards from './pages/Standards'
-import Settings from './pages/Settings'
+import { useMemo } from 'react'
+import { Route, Switch } from 'wouter'
+import { useAuth } from './hooks/useAuth'
+import { Sidebar } from './components/core/Sidebar'
+import { Header } from './components/core/Header'
+import DashboardPage from './pages/Dashboard'
+import RosterUploadPage from './pages/Roster'
+import StudentGroupsPage from './pages/Groups'
+import StandardsEnginePage from './pages/Standards'
+import AssignmentsPage from './pages/Assignments'
+import SettingsPage from './pages/Settings'
 
 export default function App() {
-  const [user, setUser] = useState<any>(null)
-  const [ , navigate] = useLocation()
+  const [authState, actions] = useAuth()
+  const user = authState.user
 
-  useEffect(() => {
-    return onAuth((u)=> setUser(u))
-  }, [])
-
-  const active = (path:string) => location.pathname === path ? { fontWeight: 700, textDecoration: 'underline' } : {}
+  const content = useMemo(() => (
+    <Switch>
+      <Route path="/" component={() => <DashboardPage user={user} loading={authState.loading} />} />
+      <Route path="/roster" component={() => <RosterUploadPage user={user} />} />
+      <Route path="/groups" component={() => <StudentGroupsPage user={user} />} />
+      <Route path="/standards" component={() => <StandardsEnginePage user={user} />} />
+      <Route path="/assignments" component={() => <AssignmentsPage user={user} />} />
+      <Route path="/settings" component={() => <SettingsPage user={user} />} />
+      <Route>Not found</Route>
+    </Switch>
+  ), [user, authState.loading])
 
   return (
-    <div style={{ display:'grid', gridTemplateColumns: '260px 1fr', minHeight:'100vh', background:'#0d0a17', color:'#dbeafe' }}>
-      <aside style={{ padding:'20px', borderRight:'1px solid #1f2937' }}>
-        <div style={{ fontSize:24, fontWeight:900, marginBottom:24, background:'linear-gradient(90deg,#06b6d4,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>SYNAPSE</div>
-        <nav style={{ display:'grid', gap:8 }}>
-          <Link href="/" ><a style={active('/')}>📊 Dashboard</a></Link>
-          <Link href="/roster"><a style={active('/roster')}>🧑‍🏫 Roster</a></Link>
-          <Link href="/assignments"><a style={active('/assignments')}>✍️ Assignments</a></Link>
-          <Link href="/standards"><a style={active('/standards')}>📋 Standards</a></Link>
-          <Link href="/settings"><a style={active('/settings')}>⚙ Settings</a></Link>
-        </nav>
-        <div style={{ marginTop:'auto' }}>
-          <div style={{ marginTop:24, fontSize:12, color:'#94a3b8', wordBreak:'break-all' }}>
-            {user ? <>Signed in: {user.email}</> : <>Not signed in</>}
-          </div>
-          <div style={{ display:'grid', gap:8, marginTop:12 }}>
-            {!user ? <button onClick={()=>googleSignIn()} style={{ padding:'8px 12px', background:'#7c3aed', color:'white', borderRadius:8 }}>Sign in with Google</button>
-                   : <button onClick={()=>logout()} style={{ padding:'8px 12px', background:'#ef4444', color:'white', borderRadius:8 }}>Log out</button>}
-          </div>
-        </div>
-      </aside>
-      <main style={{ padding:'24px' }}>
-        <Switch>
-          <Route path="/" component={()=><Dashboard user={user} />} />
-          <Route path="/roster" component={()=><Roster user={user} />} />
-          <Route path="/assignments" component={()=><Assignments user={user} />} />
-          <Route path="/standards" component={()=><Standards user={user} />} />
-          <Route path="/settings" component={()=><Settings user={user} />} />
-          <Route>404</Route>
-        </Switch>
-      </main>
+    <div className="layout" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', minHeight: '100vh' }}>
+      <Sidebar user={user} onSignIn={actions.signIn} onSignOut={actions.signOut} />
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <Header user={user} />
+        <main style={{ padding: '32px', flex: 1, overflowY: 'auto' }}>
+          {authState.error && (
+            <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
+              {authState.error}
+            </div>
+          )}
+          {content}
+        </main>
+      </div>
     </div>
   )
 }
