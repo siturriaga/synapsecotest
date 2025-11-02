@@ -30,9 +30,10 @@ async function getUpload(uid: string, uploadId: string) {
   if (!rec.exists) { const e: any = new Error("uploadId not found"); e.status = 404; throw e; }
   const data = rec.data()!;
   const storageInfo: any = data.storage;
+  const inline = data.inlineData || storageInfo?.data;
 
-  if (storageInfo?.kind === "inline" && storageInfo.data) {
-    return { buffer: Buffer.from(storageInfo.data, "base64"), meta: data };
+  if (inline) {
+    return { buffer: Buffer.from(inline, "base64"), meta: data };
   }
 
   if (storageInfo?.kind === "bucket" && storageInfo.objectPath) {

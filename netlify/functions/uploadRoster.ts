@@ -64,7 +64,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     const uploadId = uuidv4();
     const storage = getOptionalStorageBucket();
 
-    let storageDescriptor: any;
+    const base64 = buffer.toString("base64");
+    let storageDescriptor: any = { kind: "inline", data: base64 };
     let storageWarning: string | undefined;
     if (storage) {
       const objectPath = `rosters/${uid}/${uuidv4()}-${filename}`;
@@ -77,10 +78,9 @@ export const handler: Handler = async (event: HandlerEvent) => {
           err?.code === 404 || /bucket does not exist/i.test(String(err?.message || ""))
             ? "Configured Firebase Storage bucket was not found. Saved roster inline instead."
             : "Failed to upload to Firebase Storage. Saved roster inline instead.";
-        storageDescriptor = { kind: "inline", data: buffer.toString("base64") };
+        storageDescriptor = { kind: "inline", data: base64 };
       }
     } else {
-      const base64 = buffer.toString("base64");
       storageDescriptor = { kind: "inline", data: base64 };
     }
 
@@ -88,6 +88,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
       filename,
       mimetype,
       storage: storageDescriptor,
+      inlineData: base64,
       period: Number(period),
       quarter: quarter.toUpperCase(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
