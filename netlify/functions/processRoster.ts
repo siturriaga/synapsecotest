@@ -1,7 +1,6 @@
 // netlify/functions/processRoster.ts
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
-import { Buffer } from "buffer";
-import { getAdmin, getOptionalStorageBucket, getStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
+import { getAdmin, getStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as ExcelJS from 'exceljs'; 
@@ -29,27 +28,9 @@ async function getUpload(uid: string, uploadId: string) {
   const rec = await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).get();
   if (!rec.exists) { const e: any = new Error("uploadId not found"); e.status = 404; throw e; }
   const data = rec.data()!;
-  const storageInfo: any = data.storage;
-
-  if (storageInfo?.kind === "inline" && storageInfo.data) {
-    return { buffer: Buffer.from(storageInfo.data, "base64"), meta: data };
-  }
-
-  if (storageInfo?.kind === "bucket" && storageInfo.objectPath) {
-    const bucket = getOptionalStorageBucket() ?? getStorageBucket();
-    const [buf] = await bucket.file(storageInfo.objectPath).download();
-    return { buffer: buf, meta: data };
-  }
-
-  const bucket = getOptionalStorageBucket();
-  if (bucket && data.objectPath) {
-    const [buf] = await bucket.file(data.objectPath).download();
-    return { buffer: buf, meta: data };
-  }
-
-  const e: any = new Error("Roster upload source unavailable");
-  e.status = 500;
-  throw e;
+  const bucket = getStorageBucket();
+  const [buf] = await bucket.file(data.objectPath).download();
+  return { buffer: buf, meta: data };
 }
 
 /**

@@ -33,13 +33,6 @@ export function getStorageBucket() {
   return admin.storage().bucket(bucketName);
 }
 
-export function getOptionalStorageBucket() {
-  const bucketName = process.env.FIREBASE_STORAGE_BUCKET;
-  if (!bucketName) return null;
-  const admin = getAdmin();
-  return admin.storage().bucket(bucketName);
-}
-
 export async function verifyBearerUid(authorization?: string): Promise<string> {
   if (!authorization || !authorization.startsWith("Bearer ")) {
     const e:any = new Error("Missing/invalid Authorization header"); e.status=401; throw e;
