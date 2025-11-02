@@ -32,7 +32,6 @@ Set these in Netlify (Build & deploy → Environment):
 - `FIREBASE_PRIVATE_KEY` (use literal `\n` for newlines)
 - `FIREBASE_STORAGE_BUCKET`
 - `GEMINI_API_KEY`
-- `GEMINI_MODEL` (optional – defaults to `gemini-1.5-pro`, falls back to `gemini-1.5-pro-001`)
 
 ### Client-safe
 - `VITE_FIREBASE_API_KEY`
@@ -67,6 +66,4 @@ Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`; when ru
 2. Configure the environment variables above.
 3. Authorize the Netlify domain in Firebase Auth.
 4. Deploy → Sign in with Google → Upload roster → Generate groups + lessons → Verify Firestore collections update (`dashboard_stats`, `roster`, `groups`, `assignments`, `preferences`, `logs`).
-5. Confirm CSP headers allow the Firebase and Google endpoints used here (a permissive
-   `Cross-Origin-Opener-Policy: same-origin-allow-popups` header is already defined to
-   keep Google sign-in popups working).
+5. Confirm CSP headers allow the Firebase and Google endpoints used here.
