@@ -12,14 +12,17 @@ for = "/*"
   [headers.values]
   Content-Security-Policy = """
     default-src 'self';
-    script-src 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com;
-    script-src-elem 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com;
+    script-src 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com https://accounts.google.com;
+    script-src-elem 'self' https://www.gstatic.com https://www.googleapis.com https://apis.google.com https://accounts.google.com;
     connect-src 'self'
       https://firestore.googleapis.com
       https://identitytoolkit.googleapis.com
       https://securetoken.googleapis.com
       https://www.googleapis.com
-      https://www.googleapis.com/oauth2/v3/token;
+      https://www.googleapis.com/oauth2/v3/token
+      https://oauth2.googleapis.com
+      https://apis.google.com
+      https://accounts.google.com;
     img-src 'self' data: https:;
     style-src 'self' 'unsafe-inline';
     font-src 'self' https://fonts.gstatic.com data:;
@@ -28,8 +31,14 @@ for = "/*"
     base-uri 'self';
     object-src 'none';
   """
+  Cross-Origin-Opener-Policy = "same-origin-allow-popups"
 
 [[redirects]]
 from = "/api/*"
 to = "/.netlify/functions/:splat"
+status = 200
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
 status = 200

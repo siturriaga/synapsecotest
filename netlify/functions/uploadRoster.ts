@@ -1,7 +1,7 @@
 // netlify/functions/uploadRoster.ts
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import Busboy from "busboy"; // Corrected import style
-import { getAdmin, verifyBearerUid } from "./_lib/firebaseAdmin";
+import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import { Buffer } from "buffer"; // Ensure Buffer is available
 import { v4 as uuidv4 } from "uuid";
 
@@ -61,18 +61,23 @@ export const handler: Handler = async (event: HandlerEvent) => {
     });
 
     const { filename, mimetype, buffer } = await filePromise;
-    const objectPath = `rosters/${uid}/${uuidv4()}-${filename}`;
     const uploadId = uuidv4();
+    const storage = getOptionalStorageBucket();
 
-    // 1. Upload to Firebase Storage
-    const bucket = admin.storage().bucket();
-    await bucket.file(objectPath).save(buffer, { metadata: { contentType: mimetype } });
+    let storageDescriptor: any;
+    if (storage) {
+      const objectPath = `rosters/${uid}/${uuidv4()}-${filename}`;
+      await storage.file(objectPath).save(buffer, { metadata: { contentType: mimetype } });
+      storageDescriptor = { kind: "bucket", objectPath };
+    } else {
+      const base64 = buffer.toString("base64");
+      storageDescriptor = { kind: "inline", data: base64 };
+    }
 
-    // 2. Write metadata to Firestore
     await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).set({
       filename,
       mimetype,
-      objectPath,
+      storage: storageDescriptor,
       period: Number(period),
       quarter: quarter.toUpperCase(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -83,7 +88,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
   } catch (e: any) {
     // Log error for debugging
-    console.error("Upload error:", e); 
+    console.error("Upload error:", e);
     return json(e.status || 500, { error: e.message || "Internal server error during upload." });
   }
 };
