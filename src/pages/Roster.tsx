@@ -1,97 +1,215 @@
-
-import { useRef, useState } from 'react'
+import { useState } from 'react'
+import type { User } from 'firebase/auth'
 import { auth } from '../firebase'
+import { safeFetch } from '../utils/safeFetch'
 
-export default function Roster({ user }:{ user:any }) {
-  const fileRef = useRef<HTMLInputElement|null>(null)
-  const [uploadId, setUploadId] = useState<string>('')
-  const [preview, setPreview] = useState<any>(null)
-  const [report, setReport] = useState<any>(null)
-  const [period, setPeriod] = useState<number>(1)
-  const [quarter, setQuarter] = useState<'Q1'|'Q2'|'Q3'|'Q4'>('Q1')
+interface RosterPageProps {
+  user: User | null
+}
 
-  async function uploadFile() {
-    if (!user) return alert('Sign in first')
-    const f = fileRef.current?.files?.[0]
-    if (!f) return alert('Choose a file')
-    const token = await auth.currentUser?.getIdToken()
-    const form = new FormData()
-    form.append('file', f)
-    const res = await fetch(`/api/uploadRoster?period=${period}&quarter=${quarter}`, {
-      method:'POST',
-      headers: { 'Authorization': 'Bearer '+token },
-      body: form
-    })
-    const data = await res.json()
-    if (!res.ok) return alert(data.error || 'Upload failed')
-    setUploadId(data.uploadId)
+type PreviewRow = {
+  row: number
+  status: 'ok' | 'needs_review'
+  data: { name: string | null; email: string | null; period: number | null; quarter: string | null }
+  issues?: string[]
+}
+
+type PreviewResponse = {
+  rows: PreviewRow[]
+  stats: { total: number; ok: number; needs_review: number }
+}
+
+type CommitResponse = {
+  written: number
+  skipped: number
+  collection: string
+}
+
+export default function RosterUploadPage({ user }: RosterPageProps) {
+  const [file, setFile] = useState<File | null>(null)
+  const [period, setPeriod] = useState('1')
+  const [quarter, setQuarter] = useState('Q1')
+  const [preview, setPreview] = useState<PreviewResponse | null>(null)
+  const [uploadId, setUploadId] = useState<string | null>(null)
+  const [status, setStatus] = useState<string>('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function uploadFile(mode: 'preview' | 'commit') {
+    if (!user || !file) {
+      setError('Select a file and ensure you are signed in.')
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+      setStatus(mode === 'preview' ? 'Uploading for preview…' : 'Applying roster to Firestore…')
+
+      let id = uploadId
+      if (!id || mode === 'preview') {
+        const token = await auth.currentUser?.getIdToken()
+        const form = new FormData()
+        form.append('file', file)
+        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: form
+        })
+        if (!res.ok) {
+          throw new Error(await res.text())
+        }
+        const data = await res.json()
+        id = data.uploadId
+        setUploadId(id)
+      }
+
+      const response = await safeFetch<PreviewResponse | CommitResponse>(
+        '/.netlify/functions/processRoster',
+        {
+          method: 'POST',
+          body: JSON.stringify({ uploadId: id, mode })
+        }
+      )
+
+      if (mode === 'preview') {
+        setPreview(response as PreviewResponse)
+        setStatus('Preview ready — resolve any issues before committing.')
+      } else {
+        const commit = response as CommitResponse
+        setStatus(`Synced ${commit.written} students. Skipped ${commit.skipped}.`)
+        setPreview(null)
+        setUploadId(null)
+      }
+    } catch (err: any) {
+      console.error(err)
+      setError(err?.message ?? 'Upload failed.')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  async function doPreview() {
-    if (!uploadId) return alert('Upload first')
-    const token = await auth.currentUser?.getIdToken()
-    const res = await fetch('/api/processRoster', {
-      method:'POST',
-      headers: {
-        'Authorization':'Bearer '+token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ uploadId, mode:'preview' })
-    })
-    const data = await res.json()
-    if (!res.ok) return alert(data.error || 'Preview failed')
-    setPreview(data)
-  }
-
-  async function commit() {
-    const token = await auth.currentUser?.getIdToken()
-    const res = await fetch('/api/processRoster', {
-      method:'POST',
-      headers: {
-        'Authorization':'Bearer '+token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ uploadId, mode:'commit' })
-    })
-    const data = await res.json()
-    if (!res.ok) return alert(data.error || 'Commit failed')
-    setReport(data)
+  if (!user) {
+    return (
+      <div className="glass-card fade-in">
+        <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Authenticate to upload rosters</h2>
+        <p style={{ color: 'var(--text-muted)' }}>
+          This workflow stores students in Firestore under your secure workspace scope. Please sign in to continue.
+        </p>
+      </div>
+    )
   }
 
   return (
-    <div>
-      <h2 style={{ fontSize:28, fontWeight:900, marginBottom:16 }}>Roster Import</h2>
-      {!user && <p>Please sign in to manage roster.</p>}
-      {user && (
-        <div style={{ display:'grid', gap:16 }}>
-          <div style={{ display:'flex', gap:12, alignItems:'center' }}>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf,.docx" />
-            <select value={period} onChange={e=>setPeriod(Number(e.target.value))}>
-              {[1,2,3,4,5,6,7,8].map(p=><option key={p} value={p}>Period {p}</option>)}
-            </select>
-            <select value={quarter} onChange={e=>setQuarter(e.target.value as any)}>
-              {['Q1','Q2','Q3','Q4'].map(q=><option key={q} value={q}>{q}</option>)}
-            </select>
-            <button onClick={uploadFile}>Upload</button>
-            <button onClick={doPreview} disabled={!uploadId}>Preview</button>
-            <button onClick={commit} disabled={!uploadId}>Commit</button>
+    <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
+      <section className="glass-card">
+        <div className="badge">Roster ingestion</div>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX rosters</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
+          Synapse validates email, period, and quarter fields before persisting to Firestore. Preview first to resolve flagged rows.
+        </p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            uploadFile('preview')
+          }}
+        >
+          <div className="field">
+            <label htmlFor="roster-file">Choose roster file</label>
+            <input
+              id="roster-file"
+              name="roster-file"
+              type="file"
+              accept=".csv,.xlsx,.xls,.pdf,.docx"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              required
+            />
           </div>
-          {preview && (
-            <div style={{ padding:12, border:'1px solid #334155', borderRadius:12 }}>
-              <div><b>Total:</b> {preview.stats.total} • <b>OK:</b> {preview.stats.ok} • <b>Needs review:</b> {preview.stats.needs_review}</div>
-              <details style={{ marginTop:8 }}>
-                <summary>See first 20 rows</summary>
-                <pre style={{ whiteSpace:'pre-wrap' }}>{JSON.stringify(preview.rows.slice(0,20), null, 2)}</pre>
-              </details>
+          <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+            <div className="field">
+              <label htmlFor="roster-period">Class period</label>
+              <input
+                id="roster-period"
+                name="roster-period"
+                type="number"
+                min={1}
+                max={8}
+                value={period}
+                onChange={(event) => setPeriod(event.target.value)}
+                required
+              />
             </div>
-          )}
-          {report && (
-            <div style={{ padding:12, border:'1px solid #334155', borderRadius:12 }}>
-              <div><b>Written:</b> {report.written} • <b>Skipped:</b> {report.skipped}</div>
-              <div><b>Collection:</b> {report.collection}</div>
+            <div className="field">
+              <label htmlFor="roster-quarter">Quarter</label>
+              <select
+                id="roster-quarter"
+                name="roster-quarter"
+                value={quarter}
+                onChange={(event) => setQuarter(event.target.value)}
+                required
+              >
+                <option value="Q1">Q1</option>
+                <option value="Q2">Q2</option>
+                <option value="Q3">Q3</option>
+                <option value="Q4">Q4</option>
+              </select>
             </div>
-          )}
-        </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
+            <button type="submit" className="primary" disabled={!file || loading}>
+              {loading ? 'Processing…' : 'Preview roster'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => uploadFile('commit')}
+              disabled={!uploadId || loading}
+            >
+              Commit to Firestore
+            </button>
+          </div>
+        </form>
+        {status && <p style={{ marginTop: 14, color: 'var(--text-muted)' }}>{status}</p>}
+        {error && <p style={{ marginTop: 14, color: '#fecaca' }}>{error}</p>}
+      </section>
+
+      {preview && (
+        <section className="glass-card">
+          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
+          <p style={{ color: 'var(--text-muted)' }}>
+            {preview.stats.ok} rows ready • {preview.stats.needs_review} need attention.
+          </p>
+          <table className="table" style={{ marginTop: 16 }}>
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.rows.map((row) => (
+                <tr key={row.row}>
+                  <td>{row.row}</td>
+                  <td>{row.data.name || '—'}</td>
+                  <td>{row.data.email || '—'}</td>
+                  <td>{row.data.period ?? '—'}</td>
+                  <td>{row.data.quarter ?? '—'}</td>
+                  <td>
+                    {row.status === 'ok' ? (
+                      <span className="status-success">Validated</span>
+                    ) : (
+                      <span className="status-warning">Check: {row.issues?.join(', ')}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
     </div>
   )
