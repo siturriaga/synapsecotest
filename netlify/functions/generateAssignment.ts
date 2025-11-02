@@ -2,19 +2,34 @@ import type { Handler } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
 
-type LessonTier = {
-  tier: string
-  objective: string
-  activities: string[]
-  checks: string[]
-  materials: string[]
+type AssessmentQuestion = {
+  id: string
+  prompt: string
+  options?: string[]
+  answer: string
   rationale: string
 }
 
-type LessonPlan = {
+type AssessmentLevel = {
+  level: string
+  description: string
+  questions: AssessmentQuestion[]
+  remediation: string[]
+}
+
+type AssessmentBlueprint = {
   standardCode: string
-  summary: string
-  tiers: LessonTier[]
+  standardName: string
+  subject: string
+  grade: string
+  assessmentType: string
+  questionCount: number
+  aiInsights: {
+    overview: string
+    classStrategies: string[]
+    nextSteps: string[]
+  }
+  levels: AssessmentLevel[]
 }
 
 export const handler: Handler = async (event) => {
@@ -24,55 +39,96 @@ export const handler: Handler = async (event) => {
     }
     const uid = await verifyBearerUid(event.headers.authorization)
     const body = JSON.parse(event.body || '{}')
-    const { standardCode, standardName, focus, subject, grade } = body
-    if (!standardCode || !standardName) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'standardCode and standardName are required' }) }
+    const {
+      standardCode,
+      standardName,
+      focus,
+      subject,
+      grade,
+      assessmentType,
+      questionCount,
+      includeRemediation
+    } = body
+    if (!standardCode || !standardName || !assessmentType || !questionCount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'standardCode, standardName, assessmentType, and questionCount are required' })
+      }
     }
 
     const prompt = `"""
-You are Synapse, a teacher co-pilot. Generate a differentiated lesson plan using Google Gemini.
+You are Synapse, a teacher co-pilot. Design an assessment blueprint that a middle school teacher can deploy immediately.
 Subject: ${subject}
 Grade: ${grade}
 Standard: ${standardCode} — ${standardName}
 Focus: ${focus || 'Use evidence-based instructional strategies.'}
+Assessment type: ${assessmentType}
+Total questions requested: ${questionCount}
+Remediation required: ${includeRemediation ? 'yes' : 'no'}
 
-Return strict JSON matching:
+Return strict JSON matching exactly:
 {
   "standardCode": "${standardCode}",
-  "summary": "string overview",
-  "tiers": [
+  "standardName": "${standardName}",
+  "subject": "${subject}",
+  "grade": "${grade}",
+  "assessmentType": "${assessmentType}",
+  "questionCount": ${questionCount},
+  "aiInsights": {
+    "overview": "one paragraph connecting data to instruction",
+    "classStrategies": ["3 concrete strategies"],
+    "nextSteps": ["3 actionable next steps"]
+  },
+  "levels": [
     {
-      "tier": "Emerging" | "On-level" | "Accelerated",
-      "objective": "string",
-      "activities": ["string"],
-      "checks": ["string"],
-      "materials": ["string"],
-      "rationale": "string"
+      "level": "Emerging",
+      "description": "how this level scaffolds the skill",
+      "questions": [
+        {
+          "id": "unique id",
+          "prompt": "student-facing prompt",
+          "options": ["A", "B", "C", "D"]?,
+          "answer": "correct answer",
+          "rationale": "teacher-facing explanation"
+        }
+      ],
+      "remediation": ["targeted remediation moves"]
+    },
+    {
+      "level": "On-level",
+      "description": "what mastery looks like",
+      "questions": [...],
+      "remediation": [...]
+    },
+    {
+      "level": "Accelerated",
+      "description": "extension ideas",
+      "questions": [...],
+      "remediation": [...]
     }
   ]
 }
-Ensure exactly three tiers named Emerging, On-level, Accelerated in that order.
-Include rationale referencing learner readiness and the provided focus."
-"""`
+Ensure questions are evenly distributed across levels and match the ${assessmentType} format.
+For matching, return options as an array of definitions and use the answer to pair terms.
+For reading_plus, include short evidence-based prompts.
+Keep responses concise and free of markdown."""`
 
-    const responseText = await callGemini(uid, 'Lesson generated', prompt, 0.45)
-    let parsed: LessonPlan
+    const responseText = await callGemini(uid, 'Assessment generated', prompt, 0.5)
+    let parsed: AssessmentBlueprint
     try {
-      parsed = JSON.parse(responseText) as LessonPlan
+      parsed = JSON.parse(responseText) as AssessmentBlueprint
     } catch (err) {
       throw new Error(`Gemini returned invalid JSON: ${responseText}`)
     }
 
-    if (!parsed?.tiers || parsed.tiers.length === 0) {
-      throw new Error('Gemini response missing tiers')
+    if (!parsed?.levels || parsed.levels.length !== 3) {
+      throw new Error('Gemini response missing differentiated levels')
     }
 
     const admin = getAdmin()
-    await admin.firestore().collection(`users/${uid}/assignments`).add({
-      title: `${standardCode} lesson`,
-      standardCode,
-      plan: parsed,
-      status: 'draft',
+    await admin.firestore().collection(`users/${uid}/logs`).add({
+      title: 'Assessment generated',
+      detail: `${parsed.standardCode} · ${parsed.assessmentType} · ${parsed.questionCount} questions`,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     })
 

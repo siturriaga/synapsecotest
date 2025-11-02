@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { auth } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
@@ -10,30 +10,50 @@ interface RosterPageProps {
 type PreviewRow = {
   row: number
   status: 'ok' | 'needs_review'
-  data: { name: string | null; email: string | null; period: number | null; quarter: string | null }
+  data: {
+    displayName: string | null
+    nameVariants: string[]
+    period: number | null
+    quarter: string | null
+    score: number | null
+    testName: string | null
+  }
   issues?: string[]
+}
+
+type AssessmentSummary = {
+  count: number
+  average: number | null
+  median: number | null
+  min: number | null
+  max: number | null
 }
 
 type PreviewResponse = {
   rows: PreviewRow[]
   stats: { total: number; ok: number; needs_review: number }
+  assessmentSummary: AssessmentSummary
 }
 
 type CommitResponse = {
   written: number
   skipped: number
   collection: string
+  assessmentSummary: AssessmentSummary
 }
 
 export default function RosterUploadPage({ user }: RosterPageProps) {
   const [file, setFile] = useState<File | null>(null)
   const [period, setPeriod] = useState('1')
   const [quarter, setQuarter] = useState('Q1')
+  const [testName, setTestName] = useState('')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [uploadId, setUploadId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const summary = useMemo(() => preview?.assessmentSummary, [preview])
 
   async function uploadFile(mode: 'preview' | 'commit') {
     if (!user || !file) {
@@ -51,7 +71,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         const token = await auth.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
-        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}`, {
+        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: form
@@ -77,9 +97,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setStatus('Preview ready — resolve any issues before committing.')
       } else {
         const commit = response as CommitResponse
-        setStatus(`Synced ${commit.written} students. Skipped ${commit.skipped}.`)
+        const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
+        setStatus(`Synced ${commit.written} learners. Skipped ${commit.skipped}.${averageText}`)
         setPreview(null)
         setUploadId(null)
+        setFile(null)
+        setTestName('')
       }
     } catch (err: any) {
       console.error(err)
@@ -104,9 +127,9 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX rosters</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX mastery exports</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Synapse validates email, period, and quarter fields before persisting to Firestore. Preview first to resolve flagged rows.
+          Synapse validates student names, periods, quarters, test names, and scores before persisting to Firestore. Preview first to resolve flagged rows. No student data leaves your encrypted workspace.
         </p>
         <form
           onSubmit={(event) => {
@@ -122,6 +145,17 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               type="file"
               accept=".csv,.xlsx,.xls,.pdf,.docx"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="roster-test">Name of the test or benchmark</label>
+            <input
+              id="roster-test"
+              name="roster-test"
+              value={testName}
+              onChange={(event) => setTestName(event.target.value)}
+              placeholder="e.g., Q2 Expressions Mastery Check"
               required
             />
           </div>
@@ -156,8 +190,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
-            <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Preview roster'}
+            <button type="submit" className="primary" disabled={!file || loading || !testName.trim()}>
+              {loading ? 'Processing…' : 'Preview mastery data'}
             </button>
             <button
               type="button"
@@ -174,19 +208,35 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       </section>
 
       {preview && (
-        <section className="glass-card">
-          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
-          <p style={{ color: 'var(--text-muted)' }}>
-            {preview.stats.ok} rows ready • {preview.stats.needs_review} need attention.
-          </p>
-          <table className="table" style={{ marginTop: 16 }}>
+        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
+              <p style={{ color: 'var(--text-muted)' }}>
+                {preview.stats.ok} learners ready • {preview.stats.needs_review} need attention.
+              </p>
+            </div>
+            {summary && (
+              <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                <strong>Assessment snapshot</strong>
+                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
+                  <span>Average: {summary.average !== null ? summary.average.toFixed(1) : '—'}</span>
+                  <span>Median: {summary.median !== null ? summary.median.toFixed(1) : '—'}</span>
+                  <span>High: {summary.max !== null ? summary.max.toFixed(1) : '—'} · Low: {summary.min !== null ? summary.min.toFixed(1) : '—'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <table className="table">
             <thead>
               <tr>
                 <th>Row</th>
-                <th>Name</th>
-                <th>Email</th>
+                <th>Student name</th>
+                <th>Alternate names</th>
                 <th>Period</th>
                 <th>Quarter</th>
+                <th>Score</th>
+                <th>Assessment</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -194,10 +244,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               {preview.rows.map((row) => (
                 <tr key={row.row}>
                   <td>{row.row}</td>
-                  <td>{row.data.name || '—'}</td>
-                  <td>{row.data.email || '—'}</td>
+                  <td>{row.data.displayName || '—'}</td>
+                  <td>{row.data.nameVariants.length > 1 ? row.data.nameVariants.slice(1).join(', ') : '—'}</td>
                   <td>{row.data.period ?? '—'}</td>
                   <td>{row.data.quarter ?? '—'}</td>
+                  <td>{row.data.score !== null ? row.data.score : '—'}</td>
+                  <td>{row.data.testName || testName || '—'}</td>
                   <td>
                     {row.status === 'ok' ? (
                       <span className="status-success">Validated</span>
