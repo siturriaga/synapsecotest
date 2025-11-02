@@ -21,7 +21,11 @@ export const handler: Handler = async (event: HandlerEvent) => {
     if (!uid) return json(401, { error: "Unauthorized" });
 
     const admin = getAdmin();
-    const [period, quarter] = [event.queryStringParameters?.period, event.queryStringParameters?.quarter];
+    const [period, quarter, testName] = [
+      event.queryStringParameters?.period,
+      event.queryStringParameters?.quarter,
+      event.queryStringParameters?.testName
+    ];
 
     // Check if period/quarter are valid before proceeding
     if (!period || !quarter) return json(400, { error: "Missing period or quarter in query params" });
@@ -91,6 +95,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
       inlineData: base64,
       period: Number(period),
       quarter: quarter.toUpperCase(),
+      testName: (testName || '').trim() || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       size: buffer.length,
       ...(storageWarning ? { storageWarning } : {})
