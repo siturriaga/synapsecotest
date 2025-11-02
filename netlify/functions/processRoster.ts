@@ -5,7 +5,6 @@ import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as ExcelJS from 'exceljs'; 
 
-type Buffer = NodeJS.Buffer; 
 type Mode = "preview" | "commit";
 
 function json(statusCode: number, body: any) {
