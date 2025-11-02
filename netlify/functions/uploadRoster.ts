@@ -1,7 +1,7 @@
 // netlify/functions/uploadRoster.ts
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import Busboy from "busboy"; // Corrected import style
-import { getAdmin, verifyBearerUid } from "./_lib/firebaseAdmin";
+import { getAdmin, getStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import { Buffer } from "buffer"; // Ensure Buffer is available
 import { v4 as uuidv4 } from "uuid";
 
@@ -65,7 +65,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
     const uploadId = uuidv4();
 
     // 1. Upload to Firebase Storage
-    const bucket = admin.storage().bucket();
+    const bucket = getStorageBucket();
     await bucket.file(objectPath).save(buffer, { metadata: { contentType: mimetype } });
 
     // 2. Write metadata to Firestore
