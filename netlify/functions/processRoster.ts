@@ -44,8 +44,20 @@ async function getUpload(uid: string, uploadId: string) {
       err.status = 500;
       throw err;
     }
-    const [buf] = await bucket.file(storageInfo.objectPath).download();
-    return { buffer: buf, meta: data };
+    try {
+      const [buf] = await bucket.file(storageInfo.objectPath).download();
+      return { buffer: buf, meta: data };
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      const bucketMissing = error?.code === 404 || /bucket does not exist/i.test(message);
+      const err: any = new Error(
+        bucketMissing
+          ? "Configured Firebase Storage bucket was not found. Reconfigure FIREBASE_STORAGE_BUCKET or upload a new roster."
+          : "Unable to read roster from Firebase Storage. Try re-uploading the file."
+      );
+      err.status = 500;
+      throw err;
+    }
   }
 
   const bucket = getOptionalStorageBucket();
@@ -153,6 +165,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
     const admin = getAdmin();
     const { buffer, meta } = await getUpload(uid, uploadId);
+    const storageWarning: string | undefined = meta.storageWarning;
     const name = String(meta.filename || "").toLowerCase();
     const mime = String(meta.mimetype || "").toLowerCase();
 
@@ -199,7 +212,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     };
 
     if (mode === 'preview') {
-      return json(200, { rows: reviewed, stats });
+      return json(200, { rows: reviewed, stats, ...(storageWarning ? { storageWarning } : {}) });
     }
 
     // commit
@@ -218,7 +231,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     });
 
     await batch.commit();
-    return json(200, { written, skipped, collection: `users/${uid}/roster` });
+    return json(200, { written, skipped, collection: `users/${uid}/roster`, ...(storageWarning ? { storageWarning } : {}) });
   } catch (e: any) {
     return json(e.status || 500, { error: e.message || "Internal error" });
   }
