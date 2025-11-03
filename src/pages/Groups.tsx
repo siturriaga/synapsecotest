@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
+import { AssistedHint } from '../components/core/AssistedHint'
 
 type Student = {
   id: string
@@ -152,6 +153,11 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
             <div className="badge">AI grouping</div>
             <h2 style={{ margin: '12px 0 0', fontSize: 28, fontWeight: 800 }}>Student groups orchestrated by Gemini</h2>
             <p style={{ color: 'var(--text-muted)', marginTop: 8 }}>{metadata}</p>
+            <AssistedHint
+              id="groups-upload-roster"
+              message="Upload a mastery roster so Synapse can analyze readiness and unlock Gemini grouping."
+              show={roster.length === 0 && !rosterLoading}
+            />
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
@@ -184,6 +190,11 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
         >
           {loading ? 'Generating groups…' : 'Generate instructional groups'}
         </button>
+        <AssistedHint
+          id="groups-generate"
+          message="Choose heterogeneous or homogeneous to shape the grouping logic, then tap Generate for AI recommendations."
+          show={!loading && roster.length > 0 && groups.length === 0}
+        />
         {error && <div style={{ color: '#fecaca' }}>{error}</div>}
       </section>
 

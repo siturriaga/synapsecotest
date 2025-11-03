@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
+import { AssistedHint } from '../components/core/AssistedHint'
 
 interface RosterPageProps {
   user: User | null
@@ -20,6 +21,15 @@ type PreviewRow = {
     testName: string | null
   }
   issues?: string[]
+  warnings?: string[]
+}
+
+type AssessmentSummary = {
+  count: number
+  average: number | null
+  median: number | null
+  min: number | null
+  max: number | null
 }
 
 type AssessmentSummary = {
@@ -338,6 +348,13 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               Commit to Firestore
             </button>
           </div>
+          <div style={{ marginTop: 12 }}>
+            <AssistedHint
+              id="roster-upload-start"
+              message="Choose your exported roster and tap Preview so Synapse can flag any rows that need tweaks before saving."
+              show={!file && !preview}
+            />
+          </div>
         </form>
         {status && <p style={{ marginTop: 14, color: 'var(--text-muted)' }}>{status}</p>}
         {error && <p style={{ marginTop: 14, color: '#fecaca' }}>{error}</p>}
@@ -385,6 +402,11 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               <p style={{ color: 'var(--text-muted)' }}>
                 {preview.stats.ok} learners ready • {preview.stats.needs_review} need attention.
               </p>
+              <AssistedHint
+                id="roster-resolve-rows"
+                message="Edit any highlighted rows directly in the table so class insights stay accurate when you commit."
+                show={preview.stats.needs_review > 0}
+              />
             </div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
               <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
@@ -434,6 +456,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                     <td>
                       <input
                         className="table-input"
+                        name={`student-${row.row}`}
                         value={studentValue}
                         onChange={(event) => updateOverride(row.row, 'displayName', event.target.value)}
                         placeholder="Student name"
@@ -445,6 +468,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                         type="number"
                         min={1}
                         max={8}
+                        name={`period-${row.row}`}
                         value={periodValue}
                         onChange={(event) => updateOverride(row.row, 'period', event.target.value)}
                         placeholder="—"
@@ -453,6 +477,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                     <td>
                       <select
                         className="table-input"
+                        name={`quarter-${row.row}`}
                         value={quarterValue}
                         onChange={(event) => updateOverride(row.row, 'quarter', event.target.value)}
                       >
@@ -468,6 +493,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                         className="table-input"
                         type="number"
                         step="0.1"
+                        name={`score-${row.row}`}
                         value={scoreValue}
                         onChange={(event) => updateOverride(row.row, 'score', event.target.value)}
                         placeholder="—"
@@ -476,16 +502,21 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                     <td>
                       <input
                         className="table-input"
+                        name={`test-${row.row}`}
                         value={testValue}
                         onChange={(event) => updateOverride(row.row, 'testName', event.target.value)}
                         placeholder="Assessment name"
                       />
                     </td>
                     <td>
-                      {row.status === 'ok' ? (
-                        <span className="status-success">Validated</span>
+                      {row.status === 'needs_review' ? (
+                        <span className="status-warning">
+                          Resolve: {row.issues?.join(', ') || 'Review required'}
+                        </span>
+                      ) : row.warnings?.length ? (
+                        <span className="status-warning">Warnings: {row.warnings.join(', ')}</span>
                       ) : (
-                        <span className="status-warning">Check: {row.issues?.join(', ')}</span>
+                        <span className="status-success">Validated</span>
                       )}
                     </td>
                     <td>

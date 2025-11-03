@@ -13,6 +13,7 @@ import catalog from '../../data/standards/catalog.json'
 import { safeFetch } from '../utils/safeFetch'
 import { db } from '../firebase'
 import { useRosterData } from '../hooks/useRosterData'
+import { AssistedHint } from '../components/core/AssistedHint'
 
 interface AssignmentsPageProps {
   user: User | null
@@ -488,6 +489,11 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
               ))}
             </select>
           </div>
+          <AssistedHint
+            id="assignment-pick-subject"
+            message="Choose the subject you teach to unlock the matching grade bands and standards."
+            show={!subjectId}
+          />
           <div className="field">
             <label htmlFor="assignment-grade">Grade level</label>
             <select
@@ -522,6 +528,11 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
               ))}
             </select>
           </div>
+          <AssistedHint
+            id="assignment-select-standard"
+            message="After selecting subject and grade, pick the exact standard so Synapse can craft a targeted assessment."
+            show={Boolean(subjectId && gradeLevel && !standardCode)}
+          />
           <div className="field">
             <label htmlFor="assignment-type">Assessment type</label>
             <select
@@ -573,6 +584,11 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
           <button type="submit" className="primary" disabled={loading}>
             {loading ? 'Generating…' : 'Generate and save assignment'}
           </button>
+          <AssistedHint
+            id="assignment-generate"
+            message="Click Generate once the standard and question count look right — Synapse will save the AI plan automatically."
+            show={!loading && Boolean(standardCode) && assignments.length === 0}
+          />
         </form>
         {statusMessage && <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>{statusMessage}</p>}
       </section>

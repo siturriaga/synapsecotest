@@ -50,6 +50,15 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
   const preferred = process.env.GEMINI_MODEL?.trim()
   const models = [...new Set([preferred, ...DEFAULT_MODELS].filter(Boolean))] as string[]
 
+  const generationConfig: GeminiPayload['generationConfig'] = {
+    temperature
+  }
+
+  const responseMimeType = process.env.GEMINI_RESPONSE_MIME?.trim()
+  if (responseMimeType) {
+    generationConfig.responseMimeType = responseMimeType
+  }
+
   const payload: GeminiPayload = {
     contents: [
       {
@@ -57,10 +66,9 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
         parts: [{ text: prompt }]
       }
     ],
-    generationConfig: {
-      temperature,
-      responseMimeType: 'application/json'
-    }
+    ...(generationConfig && Object.keys(generationConfig).length
+      ? { generationConfig }
+      : {})
   }
 
   let lastError: string | null = null

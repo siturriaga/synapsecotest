@@ -202,7 +202,7 @@ function describeScore(score: number | null) {
   return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
 }
 
-function buildGroupInsightsForServer(rows: any[], summary: { average: number | null }) {
+function buildGroupInsightsForServer(rows: any[], summary: { average: number | null; testName?: string | null }) {
   const scored = rows
     .filter((row) => typeof row.data.score === 'number' && row.data.score !== null)
     .sort((a, b) => (a.data.score ?? 0) - (b.data.score ?? 0));
@@ -237,7 +237,7 @@ function buildGroupInsightsForServer(rows: any[], summary: { average: number | n
         students: segment.map((row) => ({
           name: row.data.displayName,
           score: row.data.score,
-          testName: row.data.testName,
+          testName: row.data.testName || summary.testName || 'Untitled assessment',
           period: row.data.period,
           quarter: row.data.quarter,
           sheetRow: row.row ?? null
@@ -558,7 +558,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         mergedValues.score = manual?.score ?? null;
       }
 
-      const issues: string[] = [];
+      const fatalIssues: string[] = [];
+      const warnings: string[] = [];
       let nameCandidates = buildNameParts(mergedValues);
       const manualName =
         manual && Object.prototype.hasOwnProperty.call(manual, 'displayName')
@@ -577,17 +578,17 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
       const displayName = nameCandidates[0] ?? null;
       if (!displayName) {
-        issues.push("missing_name");
+        fatalIssues.push("missing_name");
       }
 
       const period = cp(mergedValues.period ?? defaultPeriod ?? meta.period);
       const quarter = cq(mergedValues.quarter ?? defaultQuarter ?? meta.quarter);
-      if (!period) issues.push("invalid_period");
-      if (!quarter) issues.push("invalid_quarter");
+      if (!period) warnings.push("invalid_period");
+      if (!quarter) warnings.push("invalid_quarter");
 
       const score = parseScore(mergedValues.score);
       if (score === null) {
-        issues.push("missing_score");
+        fatalIssues.push("missing_score");
       }
 
       let testName = String(mergedValues.testName ?? '').trim();
@@ -595,8 +596,11 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName = defaultTestName;
       }
       if (!testName) {
-        issues.push("missing_test_name");
+        warnings.push("missing_test_name");
       }
+
+      const issues = [...fatalIssues, ...warnings];
+      const status = fatalIssues.length ? "needs_review" : "ok";
 
       return {
         row: rowNumber,
@@ -608,8 +612,9 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           score: score,
           testName: testName || null
         },
-        status: issues.length ? "needs_review" : "ok",
-        issues: issues.length ? issues : undefined
+        status,
+        issues: issues.length ? issues : undefined,
+        warnings: warnings.length ? warnings : undefined
       };
     });
 
@@ -642,13 +647,14 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       const ref = assessmentsCollection.doc();
       const assessmentId = ref.id;
       const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row });
+      const resolvedTestName = row.data.testName || defaultTestName || 'Untitled assessment';
       batch.set(ref, {
         displayName: row.data.displayName,
         nameVariants: row.data.nameVariants,
         period: row.data.period,
         quarter: row.data.quarter,
         score: row.data.score,
-        testName: row.data.testName,
+        testName: resolvedTestName,
         sourceUploadId: uploadId,
         sheetRow: row.row,
         studentId: studentIdentifier,
@@ -663,7 +669,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           displayName: row.data.displayName,
           nameVariants: row.data.nameVariants,
           lastScore: row.data.score ?? null,
-          lastAssessment: row.data.testName ?? null,
+          lastAssessment: resolvedTestName,
           period: row.data.period ?? null,
           quarter: row.data.quarter ?? null,
           lastUploadId: uploadId,
@@ -684,7 +690,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       const historyRef = studentRef.collection('history').doc(assessmentId);
       batch.set(historyRef, {
         score: row.data.score ?? null,
-        testName: row.data.testName ?? null,
+        testName: resolvedTestName,
         period: row.data.period ?? null,
         quarter: row.data.quarter ?? null,
         sheetRow: row.row ?? null,
@@ -699,7 +705,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     skipped = reviewed.length - written;
 
     const summary = summariseScores(validRows);
-    const grouping = buildGroupInsightsForServer(validRows, { average: summary.average });
+    const grouping = buildGroupInsightsForServer(validRows, { average: summary.average, testName });
     const summaryRef = admin.firestore().doc(`users/${uid}/assessments_summary/${testKey}`);
     batch.set(summaryRef, {
       testName,
@@ -737,7 +743,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       studentId: (row as any).studentId ?? null,
       name: row.data.displayName,
       score: row.data.score,
-      testName: row.data.testName,
+      testName: row.data.testName || testName,
       period: row.data.period,
       quarter: row.data.quarter,
       sheetRow: row.row ?? null
@@ -749,7 +755,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         studentId: (row as any).studentId ?? null,
         name: row.data.displayName,
         score: row.data.score,
-        testName: row.data.testName,
+        testName: row.data.testName || testName,
         period: row.data.period,
         quarter: row.data.quarter,
         sheetRow: row.row ?? null
@@ -783,7 +789,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           studentId: (row as any).studentId ?? null,
           name: row.data.displayName,
           score: row.data.score,
-          testName: row.data.testName,
+          testName: row.data.testName || testName,
           period: row.data.period,
           quarter: row.data.quarter,
           sheetRow: row.row ?? null

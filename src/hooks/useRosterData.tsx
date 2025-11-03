@@ -2,7 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { User } from 'firebase/auth'
 import {
   collection,
+  deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -32,6 +35,8 @@ interface RosterDataContextValue {
   syncError: string | null
   lastSyncedAt: Date | null
   triggerSync: () => Promise<void>
+  snapshots: RosterSnapshotHistory[]
+  restoreSnapshot: (id: string) => Promise<void>
 }
 
 interface RosterDataProviderProps {
@@ -50,6 +55,17 @@ interface RosterInsights {
 interface BuildGroupResult {
   groups: RosterGroupInsight[]
   pedagogy: PedagogicalGuidance | null
+}
+
+interface RosterSnapshotHistory {
+  id: string
+  createdAt: Date | null
+  summary: {
+    totalRecords: number
+    totalStudents: number
+    latestAssessment: string | null
+  }
+  snapshot: any
 }
 
 const GROUP_TOOLKIT: Record<string, { label: string; practices: string[] }> = {
@@ -99,6 +115,13 @@ function formatScore(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   const rounded = Number(value.toFixed(1))
   return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1)
+}
+
+function toIso(value: Date | string | null | undefined) {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString()
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
 function buildGroupInsights(records: SavedAssessment[], recent: AssessmentSnapshotRecord | null): BuildGroupResult {
@@ -188,7 +211,9 @@ const RosterDataContext = createContext<RosterDataContextValue>({
   syncStatus: 'idle',
   syncError: null,
   lastSyncedAt: null,
-  triggerSync: async () => {}
+  triggerSync: async () => {},
+  snapshots: [],
+  restoreSnapshot: async () => {}
 })
 
 export function RosterDataProvider({ user, children }: RosterDataProviderProps) {
@@ -199,6 +224,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   const [syncError, setSyncError] = useState<string | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
+  const [snapshots, setSnapshots] = useState<RosterSnapshotHistory[]>([])
 
   const payloadRef = useRef<{
     records: SavedAssessment[]
@@ -216,6 +242,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       setSummaries([])
       setStudents([])
       setLoading(false)
+      setSnapshots([])
       payloadRef.current = null
       hasPendingSync.current = false
       setSyncStatus('idle')
@@ -327,10 +354,46 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       done()
     })
 
+    const historyQuery = query(
+      collection(db, `users/${user.uid}/workspace_cache/snapshots`),
+      orderBy('savedAt', 'desc'),
+      limit(10)
+    )
+
+    const unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
+      const rows: RosterSnapshotHistory[] = []
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as any
+        rows.push({
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate?.() ?? (data.savedAt ? new Date(data.savedAt) : null),
+          summary: {
+            totalRecords:
+              typeof data.summary?.totalRecords === 'number'
+                ? data.summary.totalRecords
+                : Array.isArray(data.payload?.records)
+                ? data.payload.records.length
+                : 0,
+            totalStudents:
+              typeof data.summary?.totalStudents === 'number'
+                ? data.summary.totalStudents
+                : Array.isArray(data.payload?.students)
+                ? data.payload.students.length
+                : 0,
+            latestAssessment:
+              data.summary?.latestAssessment ?? data.snapshot?.latestAssessment?.testName ?? null
+          },
+          snapshot: data.snapshot ?? null
+        })
+      })
+      setSnapshots(rows)
+    })
+
     return () => {
       unsubscribeAssessments()
       unsubscribeSummaries()
       unsubscribeStudents()
+      unsubscribeHistory()
     }
   }, [user])
 
@@ -409,35 +472,116 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         recordedAt: record.createdAt ? record.createdAt.toISOString() : null
       }))
 
-      await setDoc(
-        docRef,
-        {
-          lastClientSyncAt: nowIso,
-          updatedAt: serverTimestamp(),
-          stats: {
-            totalAssessments: payload.records.length,
-            totalSummaries: payload.summaries.length,
-            totalStudents: payload.students.length
-          },
-          latestAssessment: payload.summaries[0]
-            ? {
-                id: payload.summaries[0].id,
-                testName: payload.summaries[0].testName,
-                period: payload.summaries[0].period,
-                quarter: payload.summaries[0].quarter,
-                studentCount: payload.summaries[0].studentCount,
-                averageScore: payload.summaries[0].averageScore,
-                maxScore: payload.summaries[0].maxScore,
-                minScore: payload.summaries[0].minScore,
-                updatedAt: payload.summaries[0].updatedAt
-                  ? payload.summaries[0].updatedAt.toISOString()
-                  : null
-              }
-            : null,
-          highlights: {
-            topStudents: top,
-            needsSupport: bottom
-          },
+      const snapshotDoc = {
+        lastClientSyncAt: nowIso,
+        updatedAt: serverTimestamp(),
+        stats: {
+          totalAssessments: payload.records.length,
+          totalSummaries: payload.summaries.length,
+          totalStudents: payload.students.length
+        },
+        latestAssessment: payload.summaries[0]
+          ? {
+              id: payload.summaries[0].id,
+              testName: payload.summaries[0].testName,
+              period: payload.summaries[0].period,
+              quarter: payload.summaries[0].quarter,
+              studentCount: payload.summaries[0].studentCount,
+              averageScore: payload.summaries[0].averageScore,
+              maxScore: payload.summaries[0].maxScore,
+              minScore: payload.summaries[0].minScore,
+              updatedAt: toIso(payload.summaries[0].updatedAt)
+            }
+          : null,
+        highlights: {
+          topStudents: top,
+          needsSupport: bottom
+        },
+        groupInsights: payload.groupInsights.map((group) => ({
+          id: group.id,
+          label: group.label,
+          range: group.range,
+          studentCount: group.studentCount,
+          recommendedPractices: group.recommendedPractices,
+          students: group.students.map((student) => ({
+            name: student.name,
+            score: student.score,
+            testName: student.testName,
+            period: student.period,
+            quarter: student.quarter,
+            recordedAt: toIso(student.recordedAt)
+          }))
+        })),
+        pedagogy: payload.pedagogy
+          ? {
+              summary: payload.pedagogy.summary,
+              bestPractices: payload.pedagogy.bestPractices,
+              reflectionPrompts: payload.pedagogy.reflectionPrompts
+            }
+          : null,
+        recentStudents: payload.records.slice(0, 20).map((record) => ({
+          name: record.displayName,
+          score: record.score,
+          testName: record.testName,
+          period: record.period,
+          quarter: record.quarter,
+          sheetRow: record.sheetRow ?? null,
+          uploadedAt: toIso(record.createdAt)
+        }))
+      }
+
+      await setDoc(docRef, snapshotDoc, { merge: true })
+
+      const historyCollectionRef = collection(db, `users/${user.uid}/workspace_cache/snapshots`)
+      const historyId = nowIso.replace(/[:.]/g, '-')
+      const historyDoc = doc(historyCollectionRef, historyId)
+      const historyPayload = {
+        savedAt: nowIso,
+        createdAt: serverTimestamp(),
+        summary: {
+          totalRecords: payload.records.length,
+          totalStudents: payload.students.length,
+          latestAssessment: payload.summaries[0]?.testName ?? null
+        },
+        snapshot: {
+          ...snapshotDoc,
+          updatedAt: nowIso
+        },
+        payload: {
+          records: payload.records.map((record) => ({
+            id: record.id,
+            displayName: record.displayName,
+            score: record.score ?? null,
+            period: record.period ?? null,
+            quarter: record.quarter ?? null,
+            testName: record.testName ?? null,
+            createdAt: record.createdAt ? record.createdAt.toISOString() : null,
+            studentId: record.studentId ?? null,
+            sheetRow: record.sheetRow ?? null
+          })),
+          summaries: payload.summaries.map((summary) => ({
+            id: summary.id,
+            testName: summary.testName,
+            period: summary.period ?? null,
+            quarter: summary.quarter ?? null,
+            studentCount: summary.studentCount ?? null,
+            averageScore: summary.averageScore ?? null,
+            medianScore: summary.medianScore ?? null,
+            maxScore: summary.maxScore ?? null,
+            minScore: summary.minScore ?? null,
+            updatedAt: toIso(summary.updatedAt)
+          })),
+          students: payload.students.map((student) => ({
+            id: student.id,
+            displayName: student.displayName,
+            lastScore: student.lastScore ?? null,
+            lastAssessment: student.lastAssessment ?? null,
+            period: student.period ?? null,
+            quarter: student.quarter ?? null,
+            updatedAt: toIso(student.updatedAt),
+            periodHistory: student.periodHistory ?? null,
+            quarterHistory: student.quarterHistory ?? null
+          })),
           groupInsights: payload.groupInsights.map((group) => ({
             id: group.id,
             label: group.label,
@@ -447,10 +591,10 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
             students: group.students.map((student) => ({
               name: student.name,
               score: student.score,
-              testName: student.testName,
               period: student.period,
               quarter: student.quarter,
-              recordedAt: student.recordedAt ? student.recordedAt.toISOString() : null
+              testName: student.testName,
+              recordedAt: toIso(student.recordedAt)
             }))
           })),
           pedagogy: payload.pedagogy
@@ -459,19 +603,15 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
                 bestPractices: payload.pedagogy.bestPractices,
                 reflectionPrompts: payload.pedagogy.reflectionPrompts
               }
-            : null,
-          recentStudents: payload.records.slice(0, 20).map((record) => ({
-            name: record.displayName,
-            score: record.score,
-            testName: record.testName,
-            period: record.period,
-            quarter: record.quarter,
-            sheetRow: record.sheetRow ?? null,
-            uploadedAt: record.createdAt ? record.createdAt.toISOString() : null
-          }))
-        },
-        { merge: true }
-      )
+            : null
+        }
+      }
+
+      await setDoc(historyDoc, historyPayload)
+
+      const historyDocs = await getDocs(query(historyCollectionRef, orderBy('savedAt', 'desc')))
+      const staleDocs = historyDocs.docs.slice(10)
+      await Promise.all(staleDocs.map((entry) => deleteDoc(entry.ref)))
       hasPendingSync.current = false
       setSyncStatus('idle')
       setLastSyncedAt(new Date())
@@ -494,6 +634,44 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     return () => clearInterval(interval)
   }, [saveSnapshot, user])
 
+  const restoreSnapshot = useCallback(
+    async (snapshotId: string) => {
+      if (!user || !snapshotId) return
+      try {
+        const historyDoc = doc(db, `users/${user.uid}/workspace_cache/snapshots/${snapshotId}`)
+        const snapshot = await getDoc(historyDoc)
+        if (!snapshot.exists()) {
+          throw new Error('Snapshot not found')
+        }
+        const data = snapshot.data() as any
+        if (!data?.snapshot) {
+          throw new Error('Snapshot payload missing')
+        }
+        const targetRef = doc(db, `users/${user.uid}/workspace_cache/rosterSnapshot`)
+        await setDoc(
+          targetRef,
+          {
+            ...data.snapshot,
+            restoredAt: serverTimestamp(),
+            restoredFrom: snapshotId
+          },
+          { merge: true }
+        )
+        await setDoc(
+          historyDoc,
+          {
+            restoredAt: serverTimestamp()
+          },
+          { merge: true }
+        )
+      } catch (error) {
+        console.error('Failed to restore snapshot', error)
+        throw error
+      }
+    },
+    [user]
+  )
+
   const value = useMemo<RosterDataContextValue>(
     () => ({
       loading,
@@ -508,7 +686,9 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       lastSyncedAt,
       triggerSync: async () => {
         await saveSnapshot()
-      }
+      },
+      snapshots,
+      restoreSnapshot
     }),
     [
       loading,
@@ -521,7 +701,9 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       syncStatus,
       syncError,
       lastSyncedAt,
-      saveSnapshot
+      saveSnapshot,
+      snapshots,
+      restoreSnapshot
     ]
   )
 
