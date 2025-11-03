@@ -257,7 +257,8 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
           quarter: data.quarter ?? null,
           testName: data.testName ?? null,
           createdAt: data.createdAt?.toDate?.() ?? null,
-          sheetRow: data.sheetRow ?? null
+          sheetRow: data.sheetRow ?? null,
+          studentId: data.studentId ?? null
         })
       })
       setRecords(rows)
@@ -312,7 +313,9 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
           lastUploadId: data.lastUploadId ?? null,
           lastSheetRow: data.lastSheetRow ?? null,
           updatedAt: data.updatedAt?.toDate?.() ?? null,
-          uploads: data.uploads ?? null
+          uploads: data.uploads ?? null,
+          periodHistory: Array.isArray(data.periodHistory) ? data.periodHistory : undefined,
+          quarterHistory: Array.isArray(data.quarterHistory) ? data.quarterHistory : undefined
         })
       })
       setStudents(rows)

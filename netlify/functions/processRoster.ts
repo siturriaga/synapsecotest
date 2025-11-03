@@ -18,7 +18,7 @@ const HEADER_ALIASES: Record<string, string> = {
   "first name": "firstName", "firstname": "firstName", "given name": "firstName",
   "last name": "lastName", "lastname": "lastName", "surname": "lastName",
   "preferred name": "preferredName", "nickname": "preferredName", "alias": "preferredName",
-  "name variants": "nameVariants", "aka": "nameVariants", "alternate names": "nameVariants",
+  "name variants": "nameVariants", "aka": "nameVariants",
   "score": "score", "test score": "score", "assessment score": "score", "points": "score", "grade": "score",
   "overall score": "score", "score percent": "score", "score percentage": "score", "percentage": "score",
   "test": "testName", "exam": "testName", "assessment": "testName", "benchmark": "testName",
@@ -57,6 +57,16 @@ const cp = (p: any) => {
 
 type ParsedRow = { rowNumber: number; values: Record<string, any> };
 
+type ManualOverridePayload = {
+  displayName?: string | null
+  period?: number | string | null
+  quarter?: string | null
+  score?: number | string | null
+  testName?: string | null
+};
+
+type ManualOverrideMap = Record<string, ManualOverridePayload>;
+
 function parseScore(value: any): number | null {
   if (value === null || value === undefined) return null;
   const cleaned = String(value).replace(/[^0-9.\-]+/g, '').trim();
@@ -78,7 +88,12 @@ function buildNameParts(row: any) {
     variants.push([last, first].filter(Boolean).join(', ').trim());
   }
   if (preferred) variants.push(preferred);
-  const extras = String(row.nameVariants || '').split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+  const extras = Array.isArray(row.nameVariants)
+    ? row.nameVariants
+    : String(row.nameVariants || '')
+        .split(/[;,]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
   variants.push(...extras);
   const unique = [...new Set(variants.map((value) => value.replace(/\s+/g, ' ').trim()).filter(Boolean))];
   return unique;
@@ -88,17 +103,32 @@ function slugifyName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-function buildStudentIdentifier(row: any, uploadId: string) {
-  const baseName = row.displayName || (row.nameVariants && row.nameVariants[0]) || '';
-  const slug = slugifyName(String(baseName));
-  const suffix: string[] = [];
-  if (row.period) suffix.push(`p${row.period}`);
-  if (row.quarter) suffix.push(String(row.quarter).toLowerCase());
-  if (slug) {
-    return suffix.length ? `${slug}-${suffix.join('-')}` : slug;
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
-  const fallback = row.row ? `student-${row.row}` : `student-${Date.now()}`;
-  return `${fallback}-${uploadId.slice(0, 6)}`;
+  return hash.toString(36);
+}
+
+function buildStudentIdentifier(row: any) {
+  const baseName = String(row.displayName || '').trim() || (row.nameVariants && row.nameVariants[0]) || '';
+  const slug = slugifyName(String(baseName));
+  if (!slug) {
+    const fallback = row.row ? `student-${row.row}` : `student-${Date.now()}`;
+    return `${fallback}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  if (Array.isArray(row.nameVariants) && row.nameVariants.length > 1) {
+    const signature = row.nameVariants
+      .map((name: string) => name.toLowerCase().replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .sort()
+      .join('|');
+    if (signature) {
+      return `${slug}-${hashString(signature)}`;
+    }
+  }
+  return slug;
 }
 
 function summariseScores(rows: any[]) {
@@ -455,11 +485,25 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
 
     const uid: string = await verifyBearerUid(event.headers.authorization) as string;
-    const body: { uploadId: string; mode?: string; headerOverrides?: Record<string, string>; } = JSON.parse(event.body || "{}");
+    const body: {
+      uploadId: string
+      mode?: string
+      headerOverrides?: Record<string, string>
+      manualOverrides?: ManualOverrideMap
+    } = JSON.parse(event.body || "{}")
 
     const uploadId = body.uploadId;
     const mode: Mode = body.mode === 'commit' ? 'commit' : 'preview';
     const overrides = body.headerOverrides || {};
+    const manualOverrides: ManualOverrideMap =
+      body.manualOverrides && typeof body.manualOverrides === 'object' ? body.manualOverrides : {};
+    const manualOverrideLookup = new Map<number, ManualOverridePayload>();
+    Object.entries(manualOverrides).forEach(([key, value]) => {
+      const numericKey = Number(key);
+      if (Number.isFinite(numericKey)) {
+        manualOverrideLookup.set(numericKey, value);
+      }
+    });
     if (!uploadId) return json(400, { error: "Missing uploadId" });
 
     const admin = getAdmin();
@@ -499,24 +543,57 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     const defaultTestName = String(meta.testName || '').trim();
 
     const reviewed = mappedRows.map(({ rowNumber, values }) => {
+      const manual = manualOverrideLookup.get(rowNumber);
+      const mergedValues: Record<string, any> = { ...values };
+      if (manual && Object.prototype.hasOwnProperty.call(manual, 'testName')) {
+        mergedValues.testName = manual?.testName ?? null;
+      }
+      if (manual && Object.prototype.hasOwnProperty.call(manual, 'period')) {
+        mergedValues.period = manual?.period ?? null;
+      }
+      if (manual && Object.prototype.hasOwnProperty.call(manual, 'quarter')) {
+        mergedValues.quarter = manual?.quarter ?? null;
+      }
+      if (manual && Object.prototype.hasOwnProperty.call(manual, 'score')) {
+        mergedValues.score = manual?.score ?? null;
+      }
+
       const issues: string[] = [];
-      const nameCandidates = buildNameParts(values);
+      let nameCandidates = buildNameParts(mergedValues);
+      const manualName =
+        manual && Object.prototype.hasOwnProperty.call(manual, 'displayName')
+          ? String(manual?.displayName ?? '').trim()
+          : undefined;
+      if (manualName !== undefined) {
+        if (manualName) {
+          nameCandidates = [
+            manualName,
+            ...nameCandidates.filter((name) => name !== manualName)
+          ];
+        } else {
+          nameCandidates = nameCandidates.filter(Boolean);
+        }
+      }
+
       const displayName = nameCandidates[0] ?? null;
       if (!displayName) {
         issues.push("missing_name");
       }
 
-      const period = cp(values.period ?? defaultPeriod ?? meta.period);
-      const quarter = cq(values.quarter ?? defaultQuarter ?? meta.quarter);
+      const period = cp(mergedValues.period ?? defaultPeriod ?? meta.period);
+      const quarter = cq(mergedValues.quarter ?? defaultQuarter ?? meta.quarter);
       if (!period) issues.push("invalid_period");
       if (!quarter) issues.push("invalid_quarter");
 
-      const score = parseScore(values.score);
+      const score = parseScore(mergedValues.score);
       if (score === null) {
         issues.push("missing_score");
       }
 
-      const testName = String(values.testName || defaultTestName || '').trim();
+      let testName = String(mergedValues.testName ?? '').trim();
+      if (!testName && defaultTestName) {
+        testName = defaultTestName;
+      }
       if (!testName) {
         issues.push("missing_test_name");
       }
@@ -564,6 +641,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       const assessmentsCollection = admin.firestore().collection(`users/${uid}/assessments`);
       const ref = assessmentsCollection.doc();
       const assessmentId = ref.id;
+      const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row });
       batch.set(ref, {
         displayName: row.data.displayName,
         nameVariants: row.data.nameVariants,
@@ -573,11 +651,11 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName: row.data.testName,
         sourceUploadId: uploadId,
         sheetRow: row.row,
+        studentId: studentIdentifier,
         createdAt: now,
         updatedAt: now
       });
 
-      const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row }, uploadId);
       const studentRef = admin.firestore().doc(`users/${uid}/students/${studentIdentifier}`);
       batch.set(
         studentRef,
@@ -591,7 +669,14 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           lastUploadId: uploadId,
           lastSheetRow: row.row ?? null,
           updatedAt: now,
-          uploads: admin.firestore.FieldValue.increment(1)
+          uploads: admin.firestore.FieldValue.increment(1),
+          studentId: studentIdentifier,
+          ...(row.data.period !== null
+            ? { periodHistory: admin.firestore.FieldValue.arrayUnion(row.data.period) }
+            : {}),
+          ...(row.data.quarter
+            ? { quarterHistory: admin.firestore.FieldValue.arrayUnion(row.data.quarter) }
+            : {})
         },
         { merge: true }
       );
@@ -604,9 +689,11 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         quarter: row.data.quarter ?? null,
         sheetRow: row.row ?? null,
         uploadId,
-        createdAt: now
+        createdAt: now,
+        studentId: studentIdentifier
       });
 
+      (row as any).studentId = studentIdentifier;
       written++;
     });
     skipped = reviewed.length - written;
@@ -647,6 +734,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       .filter((row) => typeof row.data.score === 'number')
       .sort((a, b) => (b.data.score ?? -Infinity) - (a.data.score ?? -Infinity));
     const topHighlight = scoredRows.slice(0, 5).map((row) => ({
+      studentId: (row as any).studentId ?? null,
       name: row.data.displayName,
       score: row.data.score,
       testName: row.data.testName,
@@ -658,6 +746,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       .slice(-5)
       .reverse()
       .map((row) => ({
+        studentId: (row as any).studentId ?? null,
         name: row.data.displayName,
         score: row.data.score,
         testName: row.data.testName,
@@ -691,6 +780,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         groupInsights: grouping.groups,
         pedagogy: grouping.pedagogy,
         recentStudents: validRows.slice(0, 25).map((row) => ({
+          studentId: (row as any).studentId ?? null,
           name: row.data.displayName,
           score: row.data.score,
           testName: row.data.testName,

@@ -120,9 +120,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
       <section className="glass-card">
         <div className="badge">Standards library</div>
         <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Browse standards by subject and grade</h2>
-        <p style={{ color: 'var(--text-muted)' }}>
-          Select a subject and grade level to reveal the appropriate standards, then launch AI-generated assignments from the same workflow used on the assignments page.
-        </p>
+        <p style={{ color: 'var(--text-muted)' }}>Pick a subject, choose the grade, then select the standard you want to target.</p>
         <div style={{ display: 'grid', gap: 16, marginTop: 18 }}>
           <div className="field">
             <label htmlFor="standards-subject">Subject</label>
@@ -159,26 +157,35 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
           </div>
         </div>
         {availableStandards.length > 0 ? (
-          <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
-            {availableStandards.map((standard) => (
-              <button
-                key={standard.code}
-                className="secondary"
-                style={{
-                  justifyContent: 'flex-start',
-                  textAlign: 'left',
-                  padding: '14px 18px',
-                  background:
-                    blueprint?.standardCode === standard.code || selected?.code === standard.code
-                      ? 'rgba(99,102,241,0.18)'
-                      : 'rgba(15,23,42,0.65)'
+          <div style={{ display: 'grid', gap: 12, marginTop: 18 }}>
+            <div className="field">
+              <label htmlFor="standards-code">Standard</label>
+              <select
+                id="standards-code"
+                name="standards-code"
+                value={selected?.code ?? ''}
+                onChange={(event) => {
+                  const next = availableStandards.find((entry) => entry.code === event.target.value) ?? null
+                  setSelected(next)
                 }}
-                onClick={() => setSelected(standard)}
               >
-                <span style={{ fontWeight: 700 }}>{standard.code}</span>
-                <span style={{ display: 'block', marginTop: 6, fontSize: 14, color: 'var(--text-muted)' }}>{standard.name}</span>
-              </button>
-            ))}
+                <option value="">Select a standard</option>
+                {availableStandards.map((standard) => (
+                  <option key={standard.code} value={standard.code}>
+                    {standard.code} — {standard.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selected && (
+              <div
+                className="glass-subcard"
+                style={{ border: '1px solid rgba(148,163,184,0.25)', borderRadius: 18, padding: 18, background: 'rgba(15,23,42,0.55)' }}
+              >
+                <strong>{selected.code}</strong>
+                <p style={{ margin: '8px 0 0', color: 'var(--text-muted)' }}>{selected.name}</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="empty-state" style={{ marginTop: 18 }}>

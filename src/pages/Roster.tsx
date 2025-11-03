@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
@@ -43,16 +43,26 @@ type CommitResponse = {
   assessmentSummary: AssessmentSummary
 }
 
+type RowOverride = {
+  displayName?: string
+  period?: string
+  quarter?: string
+  score?: string
+  testName?: string
+}
+
 export default function RosterUploadPage({ user }: RosterPageProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [period, setPeriod] = useState('1')
-  const [quarter, setQuarter] = useState('Q1')
+  const [period, setPeriod] = useState('')
+  const [quarter, setQuarter] = useState('')
   const [testName, setTestName] = useState('')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [uploadId, setUploadId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [overrides, setOverrides] = useState<Record<number, RowOverride>>({})
+  const [overrideDirty, setOverrideDirty] = useState(false)
   const {
     loading: rosterLoading,
     records,
@@ -99,6 +109,70 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     return 'Waiting for first snapshot…'
   }, [syncStatus, syncError, lastSyncedAt])
 
+  const buildManualOverrides = useCallback(() => {
+    const payload: Record<number, any> = {}
+    Object.entries(overrides).forEach(([key, fields]) => {
+      const rowNumber = Number(key)
+      if (!Number.isFinite(rowNumber)) return
+      const entry: Record<string, any> = {}
+      if (Object.prototype.hasOwnProperty.call(fields, 'displayName')) {
+        const value = fields.displayName?.trim() ?? ''
+        entry.displayName = value ? value : null
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'period')) {
+        const trimmed = fields.period?.trim() ?? ''
+        if (!trimmed) {
+          entry.period = null
+        } else {
+          const numeric = Number(trimmed)
+          entry.period = Number.isFinite(numeric) ? numeric : null
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'quarter')) {
+        const trimmed = fields.quarter?.trim() ?? ''
+        entry.quarter = trimmed ? trimmed.toUpperCase() : null
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'score')) {
+        const trimmed = fields.score?.trim() ?? ''
+        if (!trimmed) {
+          entry.score = null
+        } else {
+          const numeric = Number(trimmed)
+          entry.score = Number.isFinite(numeric) ? numeric : null
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'testName')) {
+        const value = fields.testName?.trim() ?? ''
+        entry.testName = value ? value : null
+      }
+      if (Object.keys(entry).length > 0) {
+        payload[rowNumber] = entry
+      }
+    })
+    return payload
+  }, [overrides])
+
+  const updateOverride = useCallback((rowNumber: number, field: keyof RowOverride, value: string) => {
+    setOverrides((prev) => {
+      const nextRow = { ...(prev[rowNumber] ?? {}), [field]: value }
+      const next = { ...prev, [rowNumber]: nextRow }
+      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
+      setOverrideDirty(hasValues)
+      return next
+    })
+  }, [])
+
+  const resetOverride = useCallback((rowNumber: number) => {
+    setOverrides((prev) => {
+      if (!prev[rowNumber]) return prev
+      const next = { ...prev }
+      delete next[rowNumber]
+      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
+      setOverrideDirty(hasValues)
+      return next
+    })
+  }, [])
+
   async function uploadFile(mode: 'preview' | 'commit') {
     if (!user || !file) {
       setError('Select a file and ensure you are signed in.')
@@ -111,7 +185,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       setStatus(mode === 'preview' ? 'Uploading for preview…' : 'Applying roster to Firestore…')
 
       let id = uploadId
-      if (!id || mode === 'preview') {
+      if (!id) {
         const token = await auth.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
@@ -132,13 +206,14 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         '/.netlify/functions/processRoster',
         {
           method: 'POST',
-          body: JSON.stringify({ uploadId: id, mode })
+          body: JSON.stringify({ uploadId: id, mode, manualOverrides: buildManualOverrides() })
         }
       )
 
       if (mode === 'preview') {
         setPreview(response as PreviewResponse)
         setStatus('Preview ready — resolve any issues before committing.')
+        setOverrideDirty(false)
       } else {
         const commit = response as CommitResponse
         const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
@@ -147,6 +222,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setUploadId(null)
         setFile(null)
         setTestName('')
+        setOverrides({})
+        setOverrideDirty(false)
         try {
           await triggerSync()
         } catch (syncErr) {
@@ -176,9 +253,9 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX mastery exports</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and refine them in place</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Synapse validates student names, periods, quarters, test names, and scores before persisting to Firestore. Preview first to resolve flagged rows. No student data leaves your encrypted workspace.
+          Drop in your export, edit names, periods, scores, or test titles directly in the table, then preview before saving.
         </p>
         <form
           onSubmit={(event) => {
@@ -193,7 +270,16 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               name="roster-file"
               type="file"
               accept=".csv,.xlsx,.xls,.pdf,.docx"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const nextFile = event.target.files?.[0] ?? null
+                setFile(nextFile)
+                setUploadId(null)
+                setPreview(null)
+                setOverrides({})
+                setOverrideDirty(false)
+                setStatus('')
+                setError(null)
+              }}
               required
             />
           </div>
@@ -220,7 +306,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 max={8}
                 value={period}
                 onChange={(event) => setPeriod(event.target.value)}
-                required
+                placeholder="Optional"
               />
             </div>
             <div className="field">
@@ -230,8 +316,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 name="roster-quarter"
                 value={quarter}
                 onChange={(event) => setQuarter(event.target.value)}
-                required
               >
+                <option value="">—</option>
                 <option value="Q1">Q1</option>
                 <option value="Q2">Q2</option>
                 <option value="Q3">Q3</option>
@@ -324,36 +410,117 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
             <thead>
               <tr>
                 <th>Row</th>
-                <th>Student name</th>
-                <th>Alternate names</th>
+                <th>Student</th>
                 <th>Period</th>
                 <th>Quarter</th>
                 <th>Score</th>
                 <th>Assessment</th>
                 <th>Status</th>
+                <th>Manual</th>
               </tr>
             </thead>
             <tbody>
-              {preview.rows.map((row) => (
-                <tr key={row.row}>
-                  <td>{row.row}</td>
-                  <td>{row.data.displayName || '—'}</td>
-                  <td>{row.data.nameVariants.length > 1 ? row.data.nameVariants.slice(1).join(', ') : '—'}</td>
-                  <td>{row.data.period ?? '—'}</td>
-                  <td>{row.data.quarter ?? '—'}</td>
-                  <td>{row.data.score !== null ? row.data.score : '—'}</td>
-                  <td>{row.data.testName || testName || '—'}</td>
-                  <td>
-                    {row.status === 'ok' ? (
-                      <span className="status-success">Validated</span>
-                    ) : (
-                      <span className="status-warning">Check: {row.issues?.join(', ')}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {preview.rows.map((row) => {
+                const rowOverride = overrides[row.row] ?? {}
+                const hasOverride = !!rowOverride && Object.keys(rowOverride).length > 0
+                const studentValue = rowOverride.displayName ?? row.data.displayName ?? ''
+                const periodValue = rowOverride.period ?? (row.data.period !== null ? String(row.data.period) : '')
+                const quarterValue = rowOverride.quarter ?? (row.data.quarter ?? '')
+                const scoreValue = rowOverride.score ?? (row.data.score !== null ? String(row.data.score) : '')
+                const testValue = rowOverride.testName ?? row.data.testName ?? testName ?? ''
+                return (
+                  <tr key={row.row}>
+                    <td>{row.row}</td>
+                    <td>
+                      <input
+                        className="table-input"
+                        value={studentValue}
+                        onChange={(event) => updateOverride(row.row, 'displayName', event.target.value)}
+                        placeholder="Student name"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        min={1}
+                        max={8}
+                        value={periodValue}
+                        onChange={(event) => updateOverride(row.row, 'period', event.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        className="table-input"
+                        value={quarterValue}
+                        onChange={(event) => updateOverride(row.row, 'quarter', event.target.value)}
+                      >
+                        <option value="">—</option>
+                        <option value="Q1">Q1</option>
+                        <option value="Q2">Q2</option>
+                        <option value="Q3">Q3</option>
+                        <option value="Q4">Q4</option>
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        step="0.1"
+                        value={scoreValue}
+                        onChange={(event) => updateOverride(row.row, 'score', event.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        value={testValue}
+                        onChange={(event) => updateOverride(row.row, 'testName', event.target.value)}
+                        placeholder="Assessment name"
+                      />
+                    </td>
+                    <td>
+                      {row.status === 'ok' ? (
+                        <span className="status-success">Validated</span>
+                      ) : (
+                        <span className="status-warning">Check: {row.issues?.join(', ')}</span>
+                      )}
+                    </td>
+                    <td>
+                      {hasOverride ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => resetOverride(row.row)}
+                        >
+                          Reset
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+          {overrideDirty && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: '1px solid rgba(251,191,36,0.45)',
+                background: 'rgba(251,191,36,0.12)',
+                color: '#facc15',
+                fontSize: 13
+              }}
+            >
+              Manual edits pending — run Preview again to validate before committing.
+            </div>
+          )}
         </section>
       )}
 

@@ -21,14 +21,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
     if (!uid) return json(401, { error: "Unauthorized" });
 
     const admin = getAdmin();
-    const [period, quarter, testName] = [
+    const [periodRaw, quarterRaw, testName] = [
       event.queryStringParameters?.period,
       event.queryStringParameters?.quarter,
       event.queryStringParameters?.testName
     ];
-
-    // Check if period/quarter are valid before proceeding
-    if (!period || !quarter) return json(400, { error: "Missing period or quarter in query params" });
+    const periodParsed = periodRaw && periodRaw.trim() !== '' ? Number(periodRaw) : null;
+    const period = periodParsed !== null && Number.isFinite(periodParsed) ? periodParsed : null;
+    const quarter = quarterRaw && quarterRaw.trim() !== '' ? quarterRaw.toUpperCase() : null;
 
     // Ensure the busboy object is initialized correctly
     const busboy = Busboy({ headers: event.headers }); // Fix: Call Busboy as a function/constructor
@@ -93,8 +93,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
       mimetype,
       storage: storageDescriptor,
       inlineData: base64,
-      period: Number(period),
-      quarter: quarter.toUpperCase(),
+      period,
+      quarter,
       testName: (testName || '').trim() || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       size: buffer.length,

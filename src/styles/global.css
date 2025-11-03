@@ -145,6 +145,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   background: rgba(99, 102, 241, 0.08);
 }
 
+.table-input {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
 form .field {
   display: grid;
   gap: 6px;
@@ -200,6 +210,19 @@ button.secondary {
   padding: 10px 16px;
   border-radius: 12px;
   font-weight: 600;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
 }
 
 .tag {

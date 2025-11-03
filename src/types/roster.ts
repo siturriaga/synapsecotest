@@ -7,6 +7,7 @@ export type SavedAssessment = {
   testName: string | null
   createdAt: Date | null
   sheetRow?: number | null
+  studentId?: string | null
 }
 
 export type AssessmentSnapshotRecord = {
@@ -34,6 +35,8 @@ export type StudentRosterRecord = {
   lastSheetRow?: number | null
   updatedAt: Date | null
   uploads?: number | null
+  periodHistory?: number[]
+  quarterHistory?: string[]
 }
 
 export type RosterInsightEntry = {
