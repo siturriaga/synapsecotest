@@ -1,4 +1,4 @@
-import type { Handler } from '@netlify/functions'
+import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
 
@@ -25,11 +25,68 @@ type GeminiGroup = {
   }>
 }
 
+type GeminiGroupStudent = NonNullable<GeminiGroup['students']>[number]
+
+type NormalizedStudent = {
+  id: string
+  name: string
+  readiness: string | null
+  period: number | null
+  quarter: string | null
+  score: number | null
+}
+
+type NormalizedGroup = {
+  id: string
+  name: string
+  rationale: string
+  students: NormalizedStudent[]
+}
+
+type GroupStudentsRequest = {
+  mode?: string
+  refinement?: string
+}
+
 function scoreBand(score: number | null): string | null {
   if (score === null || Number.isNaN(score)) return null
   if (score >= 85) return 'Extending mastery'
   if (score >= 70) return 'Developing understanding'
   return 'Foundation support needed'
+}
+
+function resolveName(options: Array<unknown>, fallback: string): string {
+  for (const option of options) {
+    if (typeof option === 'string') {
+      const trimmed = option.trim()
+      if (trimmed) {
+        return trimmed
+      }
+    }
+  }
+  return fallback
+}
+
+function parseScoreValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function parseInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 function buildPrompt(mode: string, roster: StudentRecord[], refinement?: string) {
@@ -81,14 +138,14 @@ Each student should appear in exactly one group. Provide at least two groups."
 """`
 }
 
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
     }
     const uid = await verifyBearerUid(event.headers.authorization)
     const admin = getAdmin()
-    const body = JSON.parse(event.body || '{}')
+    const body = (event.body ? JSON.parse(event.body) : {}) as GroupStudentsRequest
     const mode = body.mode === 'homogeneous' ? 'homogeneous' : 'heterogeneous'
     const refinement = typeof body.refinement === 'string' ? body.refinement : undefined
 
@@ -96,35 +153,38 @@ export const handler: Handler = async (event) => {
 
     const studentsSnap = await admin.firestore().collection(`users/${uid}/students`).get()
     studentsSnap.forEach((docSnap) => {
-      const data = docSnap.data() as any
+      const data = docSnap.data() as Record<string, unknown>
+      const score = parseScoreValue(data.lastScore)
       roster.push({
         id: docSnap.id,
-        name: data.displayName ?? data.name ?? 'Unknown learner',
-        score: typeof data.lastScore === 'number' ? data.lastScore : null,
+        name: resolveName([data.displayName, data.name], 'Unknown learner'),
+        score,
         readiness:
-          data.readiness ?? (typeof data.lastScore === 'number' ? scoreBand(data.lastScore) : null),
-        period: typeof data.period === 'number' ? data.period : null,
-        quarter: typeof data.quarter === 'string' ? data.quarter : null
+          typeof data.readiness === 'string' && data.readiness.trim()
+            ? data.readiness.trim()
+            : scoreBand(score),
+        period: parseInteger(data.period),
+        quarter:
+          typeof data.quarter === 'string' && data.quarter.trim() ? data.quarter.trim() : null
       })
     })
 
     if (roster.length === 0) {
       const legacySnap = await admin.firestore().collection(`users/${uid}/roster`).get()
       legacySnap.forEach((docSnap) => {
-        const data = docSnap.data() as any
+        const data = docSnap.data() as Record<string, unknown>
+        const score = parseScoreValue(data.score)
         roster.push({
           id: docSnap.id,
-          name: data.displayName ?? data.name ?? data.fullName ?? 'Unknown learner',
-          score: typeof data.score === 'number' ? data.score : null,
+          name: resolveName([data.displayName, data.name, data.fullName], 'Unknown learner'),
+          score,
           readiness:
-            data.readiness ?? (typeof data.score === 'number' ? scoreBand(data.score) : null),
-          period:
-            typeof data.period === 'number'
-              ? data.period
-              : typeof data.period === 'string'
-              ? Number.parseInt(data.period, 10)
-              : null,
-          quarter: typeof data.quarter === 'string' ? data.quarter : null
+            typeof data.readiness === 'string' && data.readiness.trim()
+              ? data.readiness.trim()
+              : scoreBand(score),
+          period: parseInteger(data.period),
+          quarter:
+            typeof data.quarter === 'string' && data.quarter.trim() ? data.quarter.trim() : null
         })
       })
     }
@@ -153,69 +213,60 @@ export const handler: Handler = async (event) => {
         .map((student) => [student.name.toLowerCase(), student])
     )
 
-    const normalizedGroups = parsed.groups.map((group, index) => {
+    const normalizedGroups: NormalizedGroup[] = parsed.groups.map((group, index) => {
       const rawStudents = Array.isArray(group.students) ? group.students : []
-      const normalizedStudents = rawStudents
-        .map((student) => {
-          const lookup =
-            (student.id && rosterById.get(student.id)) ||
-            (student.name && rosterByName.get(student.name.toLowerCase()))
-          const fallbackScore =
-            typeof lookup?.score === 'number' ? lookup.score : null
-          const numericScore =
-            typeof student.score === 'number'
-              ? student.score
-              : typeof student.score === 'string'
-              ? Number.parseFloat(student.score)
-              : null
-          const resolvedScore =
-            typeof numericScore === 'number' && Number.isFinite(numericScore)
-              ? numericScore
-              : fallbackScore
-          const name = student.name?.trim() || lookup?.name || 'Unknown learner'
-          const id =
-            student.id?.trim() || lookup?.id || `student-${Math.random().toString(36).slice(2, 10)}`
-          const parsedPeriod =
-            typeof student.period === 'number'
-              ? student.period
-              : typeof student.period === 'string' && student.period.trim()
-              ? Number.parseInt(student.period, 10)
-              : null
+      const normalizedStudents: NormalizedStudent[] = rawStudents
+        .map((student, studentIndex) => {
+          if (!student || typeof student !== 'object') {
+            return null
+          }
+          const raw = student as GeminiGroupStudent
+          const rawId = typeof raw.id === 'string' ? raw.id.trim() : ''
+          const rawName = typeof raw.name === 'string' ? raw.name.trim() : ''
+          const lookupById = rawId ? rosterById.get(rawId) : undefined
+          const lookupByName = rawName ? rosterByName.get(rawName.toLowerCase()) : undefined
+          const lookup = lookupById ?? lookupByName
+          const score = parseScoreValue(raw.score) ?? lookup?.score ?? null
+          const period = parseInteger(raw.period) ?? lookup?.period ?? null
+          const quarter =
+            typeof raw.quarter === 'string' && raw.quarter.trim()
+              ? raw.quarter.trim()
+              : lookup?.quarter ?? null
+          const readiness =
+            typeof raw.readiness === 'string' && raw.readiness.trim()
+              ? raw.readiness.trim()
+              : lookup?.readiness ?? scoreBand(score)
           return {
-            id,
-            name,
-            readiness:
-              student.readiness?.trim() ||
-              (lookup?.readiness ?? scoreBand(resolvedScore)),
-            period:
-              typeof parsedPeriod === 'number' && Number.isFinite(parsedPeriod)
-                ? parsedPeriod
-                : typeof lookup?.period === 'number'
-                ? lookup.period
-                : null,
-            quarter:
-              typeof student.quarter === 'string' && student.quarter.trim()
-                ? student.quarter.trim()
-                : lookup?.quarter ?? null,
-            score: resolvedScore
+            id: rawId || lookup?.id || `group-${index + 1}-student-${studentIndex + 1}`,
+            name: rawName || lookup?.name || `Learner ${index + 1}-${studentIndex + 1}`,
+            readiness,
+            period,
+            quarter,
+            score
           }
         })
-        .filter((student) => Boolean(student.name))
+        .filter((student): student is NormalizedStudent => Boolean(student))
 
       return {
-        id: group.id || `group-${index + 1}`,
-        name: group.name || `Group ${index + 1}`,
+        id: typeof group.id === 'string' && group.id.trim() ? group.id.trim() : `group-${index + 1}`,
+        name: typeof group.name === 'string' && group.name.trim() ? group.name.trim() : `Group ${index + 1}`,
         rationale:
-          group.rationale?.trim() || 'Instructional focus generated by Gemini.',
+          typeof group.rationale === 'string' && group.rationale.trim()
+            ? group.rationale.trim()
+            : 'Instructional focus generated by Gemini.',
         students: normalizedStudents
       }
     })
 
-    parsed.groups = normalizedGroups
+    const promptChips = Array.isArray(parsed.promptChips)
+      ? parsed.promptChips
+          .filter((chip): chip is string => typeof chip === 'string' && chip.trim().length > 0)
+          .map((chip) => chip.trim())
+      : []
 
     const groupsCollection = admin.firestore().collection(`users/${uid}/groups`)
     const batch = admin.firestore().batch()
-    parsed.groups.forEach((group) => {
+    normalizedGroups.forEach((group) => {
       const ref = groupsCollection.doc(group.id)
       batch.set(ref, {
         name: group.name,
@@ -231,7 +282,7 @@ export const handler: Handler = async (event) => {
     return {
       statusCode: 200,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ groups: parsed.groups, promptChips: parsed.promptChips ?? [] })
+      body: JSON.stringify({ groups: normalizedGroups, promptChips })
     }
   } catch (err: any) {
     console.error(err)

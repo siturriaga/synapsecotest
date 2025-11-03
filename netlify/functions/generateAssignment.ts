@@ -1,4 +1,4 @@
-import type { Handler } from '@netlify/functions'
+import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
 
@@ -39,25 +39,87 @@ type PedagogyFocus = {
   reflectionPrompts: string[]
 }
 
-type ClassContext = {
-  pedagogy?: PedagogyFocus | null
-  groups?: Array<{
-    id: string
-    label: string
-    range: string
-    studentCount: number
-    recommendedPractices: string[]
-    studentNames: string[]
-  }>
+type ClassGroup = {
+  id: string
+  label: string
+  range: string
+  studentCount: number
+  recommendedPractices: string[]
+  studentNames: string[]
 }
 
-export const handler: Handler = async (event) => {
+type ClassContext = {
+  pedagogy?: PedagogyFocus | null
+  groups?: ClassGroup[]
+}
+
+type GenerateAssignmentRequest = {
+  standardCode?: string
+  standardName?: string
+  focus?: string
+  subject?: string
+  grade?: string
+  assessmentType?: string
+  questionCount?: number
+  includeRemediation?: boolean
+  classContext?: ClassContext | null
+}
+
+type NormalizedClassGroup = {
+  id: string
+  label: string
+  range: string
+  studentCount: number
+  recommendedPractices: string[]
+  studentNames: string[]
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item): item is string => Boolean(item))
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[;,]/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+  }
+  return []
+}
+
+function normalizeClassGroups(groups: unknown): NormalizedClassGroup[] {
+  if (!Array.isArray(groups)) return []
+  return groups
+    .map((group, index) => {
+      if (!group || typeof group !== 'object') return null
+      const raw = group as Partial<ClassGroup>
+      const label = typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : `Group ${index + 1}`
+      const recommendedPractices = normalizeStringArray(raw.recommendedPractices)
+      const studentNames = normalizeStringArray(raw.studentNames)
+      return {
+        id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `group-${index + 1}`,
+        label,
+        range: typeof raw.range === 'string' && raw.range.trim() ? raw.range.trim() : '—',
+        studentCount:
+          typeof raw.studentCount === 'number' && Number.isFinite(raw.studentCount) && raw.studentCount >= 0
+            ? Math.floor(raw.studentCount)
+            : studentNames.length,
+        recommendedPractices,
+        studentNames
+      }
+    })
+    .filter((group): group is NormalizedClassGroup => Boolean(group))
+}
+
+export const handler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
     }
     const uid = await verifyBearerUid(event.headers.authorization)
-    const body = JSON.parse(event.body || '{}')
+    const body = (event.body ? JSON.parse(event.body) : {}) as GenerateAssignmentRequest
     const {
       standardCode,
       standardName,
@@ -68,7 +130,7 @@ export const handler: Handler = async (event) => {
       questionCount,
       includeRemediation,
       classContext
-    } = body as typeof body & { classContext?: ClassContext }
+    } = body
     if (!standardCode || !standardName || !assessmentType || !questionCount) {
       return {
         statusCode: 400,
@@ -76,7 +138,8 @@ export const handler: Handler = async (event) => {
       }
     }
 
-    const context = classContext ?? {}
+    const context: ClassContext = classContext ?? {}
+    const normalizedGroups = normalizeClassGroups(context.groups)
     const pedagogySummary = context.pedagogy?.summary
       ? context.pedagogy.summary
       : 'Center critical pedagogy, culturally responsive teaching, and Universal Design for Learning (UDL).'
@@ -95,13 +158,11 @@ export const handler: Handler = async (event) => {
           'Which student voices will lead and which need invitation in the next lesson?'
         ])
       .join('; ')
-    const groupNarrative = Array.isArray(context.groups) && context.groups.length
-      ? context.groups
+    const groupNarrative = normalizedGroups.length
+      ? normalizedGroups
           .map(
             (group) =>
-              `- ${group.label} (${group.range}, ${group.studentCount} learners; names: ${group.studentNames.join(
-                ', '
-              ) || 'n/a'}). Recommended practices: ${group.recommendedPractices.join('; ')}`
+              `- ${group.label} (${group.range}, ${group.studentCount} learners; names: ${group.studentNames.join(', ') || 'n/a'}). Recommended practices: ${group.recommendedPractices.join('; ')}`
           )
           .join('\n')
       : '- No grouped learner insights provided. Design equitable supports across readiness levels.'
@@ -191,15 +252,15 @@ Keep responses concise and free of markdown."""`
 
     const fallbackPedagogy: PedagogyFocus = {
       summary: pedagogySummary,
-      bestPractices: pedagogyPractices.split(';').map((item) => item.trim()).filter(Boolean),
-      reflectionPrompts: pedagogyReflections.split(';').map((item) => item.trim()).filter(Boolean)
+      bestPractices: pedagogyPractices.split(';').map((item: string) => item.trim()).filter(Boolean),
+      reflectionPrompts: pedagogyReflections.split(';').map((item: string) => item.trim()).filter(Boolean)
     }
 
     const existingPedagogy = parsed.aiInsights?.pedagogy
     const combine = (incoming: string[] | undefined, fallback: string[]) => {
       const merged = [...fallback]
       if (incoming && incoming.length) {
-        incoming.forEach((item) => {
+        incoming.forEach((item: string) => {
           const trimmed = item.trim()
           if (trimmed && !merged.includes(trimmed)) {
             merged.push(trimmed)
