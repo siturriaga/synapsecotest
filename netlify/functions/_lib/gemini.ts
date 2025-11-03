@@ -16,13 +16,16 @@ type GeminiPayload = {
 }
 
 const DEFAULT_MODELS = [
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-pro-latest',
   'gemini-1.5-pro',
   'gemini-1.5-pro-002',
   'gemini-1.5-pro-001',
-  'gemini-1.5-flash'
+  'gemini-1.0-pro',
+  'gemini-pro'
 ]
 
-const DEFAULT_API_VERSION = 'v1beta'
+const DEFAULT_API_VERSION = 'v1'
 
 async function generateWithModel(
   model: string,
@@ -47,6 +50,15 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
   const preferred = process.env.GEMINI_MODEL?.trim()
   const models = [...new Set([preferred, ...DEFAULT_MODELS].filter(Boolean))] as string[]
 
+  const generationConfig: GeminiPayload['generationConfig'] = {
+    temperature
+  }
+
+  const responseMimeType = process.env.GEMINI_RESPONSE_MIME?.trim()
+  if (responseMimeType) {
+    generationConfig.responseMimeType = responseMimeType
+  }
+
   const payload: GeminiPayload = {
     contents: [
       {
@@ -54,10 +66,9 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
         parts: [{ text: prompt }]
       }
     ],
-    generationConfig: {
-      temperature,
-      responseMimeType: 'application/json'
-    }
+    ...(generationConfig && Object.keys(generationConfig).length
+      ? { generationConfig }
+      : {})
   }
 
   let lastError: string | null = null
