@@ -1,6 +1,7 @@
 // netlify/functions/processRoster.ts
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 import { Buffer } from "buffer";
+import { Readable } from 'node:stream';
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
@@ -403,7 +404,8 @@ async function loadWorkbookRows(buf: Buffer, overrides: Record<string, string>, 
     if (kind === 'xlsx') {
       await workbook.xlsx.load(buf as any);
     } else {
-      await workbook.csv.read(buf.toString('utf8'));
+      const stream = Readable.from([buf.toString('utf8')]);
+      await workbook.csv.read(stream);
     }
   } catch (error) {
     return [];

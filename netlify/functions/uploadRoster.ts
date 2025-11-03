@@ -1,5 +1,5 @@
 // netlify/functions/uploadRoster.ts
-import type { Handler, HandlerEvent } from "@netlify/functions";
+import type { Handler, HandlerContext, HandlerEvent } from "@netlify/functions";
 import Busboy from "busboy"; // Corrected import style
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import { Buffer } from "buffer"; // Ensure Buffer is available
@@ -12,10 +12,11 @@ function json(statusCode: number, body: any) {
   return { statusCode, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+export const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   try {
     if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
-    if (!event.body || !event.isBase64Encoded) return json(400, { error: "Missing multipart body" });
+    const encodedBody = event.body;
+    if (!encodedBody || !event.isBase64Encoded) return json(400, { error: "Missing multipart body" });
 
     const uid = await verifyBearerUid(event.headers.authorization);
     if (!uid) return json(401, { error: "Unauthorized" });
@@ -61,7 +62,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
       });
       
       // Write the event body (buffer) to busboy to start parsing
-      busboy.end(Buffer.from(event.body, "base64"));
+      busboy.end(Buffer.from(encodedBody, "base64"));
     });
 
     const { filename, mimetype, buffer } = await filePromise;

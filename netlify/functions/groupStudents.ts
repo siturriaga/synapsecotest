@@ -1,4 +1,4 @@
-import type { Handler } from '@netlify/functions'
+import type { Handler, HandlerContext, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
 
@@ -19,10 +19,26 @@ type GeminiGroup = {
     id?: string
     name?: string
     readiness?: string | null
-    period?: number | null
+    period?: number | string | null
     quarter?: string | null
     score?: number | null
   }>
+}
+
+type NormalizedStudent = {
+  id: string
+  name: string
+  readiness: string | null
+  period: number | null
+  quarter: string | null
+  score: number | null
+}
+
+type NormalizedGroup = {
+  id: string
+  name: string
+  rationale: string
+  students: NormalizedStudent[]
 }
 
 function scoreBand(score: number | null): string | null {
@@ -81,7 +97,7 @@ Each student should appear in exactly one group. Provide at least two groups."
 """`
 }
 
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -153,13 +169,13 @@ export const handler: Handler = async (event) => {
         .map((student) => [student.name.toLowerCase(), student])
     )
 
-    const normalizedGroups = parsed.groups.map((group, index) => {
+    const normalizedGroups: NormalizedGroup[] = parsed.groups.map((group, index) => {
       const rawStudents = Array.isArray(group.students) ? group.students : []
       const normalizedStudents = rawStudents
         .map((student) => {
           const lookup =
-            (student.id && rosterById.get(student.id)) ||
-            (student.name && rosterByName.get(student.name.toLowerCase()))
+            (student.id ? rosterById.get(student.id) : undefined) ??
+            (student.name ? rosterByName.get(student.name.toLowerCase()) : undefined)
           const fallbackScore =
             typeof lookup?.score === 'number' ? lookup.score : null
           const numericScore =
@@ -181,7 +197,7 @@ export const handler: Handler = async (event) => {
               : typeof student.period === 'string' && student.period.trim()
               ? Number.parseInt(student.period, 10)
               : null
-          return {
+          const resolved: NormalizedStudent = {
             id,
             name,
             readiness:
@@ -199,6 +215,7 @@ export const handler: Handler = async (event) => {
                 : lookup?.quarter ?? null,
             score: resolvedScore
           }
+          return resolved
         })
         .filter((student) => Boolean(student.name))
 
@@ -215,7 +232,7 @@ export const handler: Handler = async (event) => {
 
     const groupsCollection = admin.firestore().collection(`users/${uid}/groups`)
     const batch = admin.firestore().batch()
-    parsed.groups.forEach((group) => {
+    normalizedGroups.forEach((group) => {
       const ref = groupsCollection.doc(group.id)
       batch.set(ref, {
         name: group.name,

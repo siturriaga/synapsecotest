@@ -1,4 +1,4 @@
-import type { Handler } from '@netlify/functions'
+import type { Handler, HandlerContext, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
 
@@ -51,7 +51,9 @@ type ClassContext = {
   }>
 }
 
-export const handler: Handler = async (event) => {
+type ClassGroup = NonNullable<ClassContext['groups']>[number]
+
+export const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -95,10 +97,11 @@ export const handler: Handler = async (event) => {
           'Which student voices will lead and which need invitation in the next lesson?'
         ])
       .join('; ')
-    const groupNarrative = Array.isArray(context.groups) && context.groups.length
-      ? context.groups
+    const groups: ClassGroup[] = Array.isArray(context.groups) ? context.groups : []
+    const groupNarrative = groups.length
+      ? groups
           .map(
-            (group) =>
+            (group: ClassGroup) =>
               `- ${group.label} (${group.range}, ${group.studentCount} learners; names: ${group.studentNames.join(
                 ', '
               ) || 'n/a'}). Recommended practices: ${group.recommendedPractices.join('; ')}`
@@ -191,15 +194,15 @@ Keep responses concise and free of markdown."""`
 
     const fallbackPedagogy: PedagogyFocus = {
       summary: pedagogySummary,
-      bestPractices: pedagogyPractices.split(';').map((item) => item.trim()).filter(Boolean),
-      reflectionPrompts: pedagogyReflections.split(';').map((item) => item.trim()).filter(Boolean)
+      bestPractices: pedagogyPractices.split(';').map((item: string) => item.trim()).filter(Boolean),
+      reflectionPrompts: pedagogyReflections.split(';').map((item: string) => item.trim()).filter(Boolean)
     }
 
     const existingPedagogy = parsed.aiInsights?.pedagogy
     const combine = (incoming: string[] | undefined, fallback: string[]) => {
       const merged = [...fallback]
       if (incoming && incoming.length) {
-        incoming.forEach((item) => {
+        incoming.forEach((item: string) => {
           const trimmed = item.trim()
           if (trimmed && !merged.includes(trimmed)) {
             merged.push(trimmed)
