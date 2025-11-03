@@ -3,6 +3,7 @@ import { Route, Switch } from 'wouter'
 import { useAuth } from './hooks/useAuth'
 import { Sidebar } from './components/core/Sidebar'
 import { Header } from './components/core/Header'
+import { RosterDataProvider } from './hooks/useRosterData'
 const DashboardPage = lazy(() => import('./pages/Dashboard'))
 const RosterUploadPage = lazy(() => import('./pages/Roster'))
 const StudentGroupsPage = lazy(() => import('./pages/Groups'))
@@ -32,19 +33,21 @@ export default function App() {
   )
 
   return (
-    <div className="layout" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', minHeight: '100vh' }}>
-      <Sidebar user={user} onSignIn={actions.signIn} onSignOut={actions.signOut} />
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <Header user={user} />
-        <main style={{ padding: '32px', flex: 1, overflowY: 'auto' }}>
-          {authState.error && (
-            <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
-              {authState.error}
-            </div>
-          )}
-          {content}
-        </main>
+    <RosterDataProvider user={user}>
+      <div className="layout" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', minHeight: '100vh' }}>
+        <Sidebar user={user} onSignIn={actions.signIn} onSignOut={actions.signOut} />
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Header user={user} />
+          <main style={{ padding: '32px', flex: 1, overflowY: 'auto' }}>
+            {authState.error && (
+              <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
+                {authState.error}
+              </div>
+            )}
+            {content}
+          </main>
+        </div>
       </div>
-    </div>
+    </RosterDataProvider>
   )
 }

@@ -28,8 +28,27 @@ type AssessmentBlueprint = {
     overview: string
     classStrategies: string[]
     nextSteps: string[]
+    pedagogy?: PedagogyFocus
   }
   levels: AssessmentLevel[]
+}
+
+type PedagogyFocus = {
+  summary: string
+  bestPractices: string[]
+  reflectionPrompts: string[]
+}
+
+type ClassContext = {
+  pedagogy?: PedagogyFocus | null
+  groups?: Array<{
+    id: string
+    label: string
+    range: string
+    studentCount: number
+    recommendedPractices: string[]
+    studentNames: string[]
+  }>
 }
 
 export const handler: Handler = async (event) => {
@@ -47,14 +66,45 @@ export const handler: Handler = async (event) => {
       grade,
       assessmentType,
       questionCount,
-      includeRemediation
-    } = body
+      includeRemediation,
+      classContext
+    } = body as typeof body & { classContext?: ClassContext }
     if (!standardCode || !standardName || !assessmentType || !questionCount) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'standardCode, standardName, assessmentType, and questionCount are required' })
       }
     }
+
+    const context = classContext ?? {}
+    const pedagogySummary = context.pedagogy?.summary
+      ? context.pedagogy.summary
+      : 'Center critical pedagogy, culturally responsive teaching, and Universal Design for Learning (UDL).'
+    const pedagogyPractices = (context.pedagogy?.bestPractices?.length
+      ? context.pedagogy.bestPractices
+      : [
+          'Honor learner voice and lived experiences when framing problems.',
+          'Provide multiple means of engagement, representation, and expression following UDL guidelines.',
+          'Leverage collaborative, restorative routines that build collective efficacy.'
+        ])
+      .join('; ')
+    const pedagogyReflections = (context.pedagogy?.reflectionPrompts?.length
+      ? context.pedagogy.reflectionPrompts
+      : [
+          'How will learners critically connect this standard to their community?',
+          'Which student voices will lead and which need invitation in the next lesson?'
+        ])
+      .join('; ')
+    const groupNarrative = Array.isArray(context.groups) && context.groups.length
+      ? context.groups
+          .map(
+            (group) =>
+              `- ${group.label} (${group.range}, ${group.studentCount} learners; names: ${group.studentNames.join(
+                ', '
+              ) || 'n/a'}). Recommended practices: ${group.recommendedPractices.join('; ')}`
+          )
+          .join('\n')
+      : '- No grouped learner insights provided. Design equitable supports across readiness levels.'
 
     const prompt = `"""
 You are Synapse, a teacher co-pilot. Design an assessment blueprint that a middle school teacher can deploy immediately.
@@ -65,6 +115,14 @@ Focus: ${focus || 'Use evidence-based instructional strategies.'}
 Assessment type: ${assessmentType}
 Total questions requested: ${questionCount}
 Remediation required: ${includeRemediation ? 'yes' : 'no'}
+
+Pedagogical commitments:
+- Summary: ${pedagogySummary}
+- Practices: ${pedagogyPractices}
+- Reflection prompts: ${pedagogyReflections}
+
+Learner group insights:
+${groupNarrative}
 
 Return strict JSON matching exactly:
 {
@@ -77,7 +135,12 @@ Return strict JSON matching exactly:
   "aiInsights": {
     "overview": "one paragraph connecting data to instruction",
     "classStrategies": ["3 concrete strategies"],
-    "nextSteps": ["3 actionable next steps"]
+    "nextSteps": ["3 actionable next steps"],
+    "pedagogy": {
+      "summary": "connect to critical pedagogy, culturally responsive teaching, and UDL",
+      "bestPractices": ["3 commitments that reflect the provided practices"],
+      "reflectionPrompts": ["2 reflective questions for teachers"]
+    }
   },
   "levels": [
     {
@@ -111,6 +174,7 @@ Return strict JSON matching exactly:
 Ensure questions are evenly distributed across levels and match the ${assessmentType} format.
 For matching, return options as an array of definitions and use the answer to pair terms.
 For reading_plus, include short evidence-based prompts.
+Infuse every element with inclusive, anti-deficit language and emphasize student agency, collaboration, and community relevance.
 Keep responses concise and free of markdown."""`
 
     const responseText = await callGemini(uid, 'Assessment generated', prompt, 0.5)
@@ -123,6 +187,37 @@ Keep responses concise and free of markdown."""`
 
     if (!parsed?.levels || parsed.levels.length !== 3) {
       throw new Error('Gemini response missing differentiated levels')
+    }
+
+    const fallbackPedagogy: PedagogyFocus = {
+      summary: pedagogySummary,
+      bestPractices: pedagogyPractices.split(';').map((item) => item.trim()).filter(Boolean),
+      reflectionPrompts: pedagogyReflections.split(';').map((item) => item.trim()).filter(Boolean)
+    }
+
+    const existingPedagogy = parsed.aiInsights?.pedagogy
+    const combine = (incoming: string[] | undefined, fallback: string[]) => {
+      const merged = [...fallback]
+      if (incoming && incoming.length) {
+        incoming.forEach((item) => {
+          const trimmed = item.trim()
+          if (trimmed && !merged.includes(trimmed)) {
+            merged.push(trimmed)
+          }
+        })
+      }
+      return merged
+    }
+
+    parsed.aiInsights = {
+      overview: parsed.aiInsights?.overview ?? '',
+      classStrategies: parsed.aiInsights?.classStrategies ?? [],
+      nextSteps: parsed.aiInsights?.nextSteps ?? [],
+      pedagogy: {
+        summary: existingPedagogy?.summary?.trim() || fallbackPedagogy.summary,
+        bestPractices: combine(existingPedagogy?.bestPractices, fallbackPedagogy.bestPractices),
+        reflectionPrompts: combine(existingPedagogy?.reflectionPrompts, fallbackPedagogy.reflectionPrompts)
+      }
     }
 
     const admin = getAdmin()

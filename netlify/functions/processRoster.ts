@@ -84,6 +84,23 @@ function buildNameParts(row: any) {
   return unique;
 }
 
+function slugifyName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function buildStudentIdentifier(row: any, uploadId: string) {
+  const baseName = row.displayName || (row.nameVariants && row.nameVariants[0]) || '';
+  const slug = slugifyName(String(baseName));
+  const suffix: string[] = [];
+  if (row.period) suffix.push(`p${row.period}`);
+  if (row.quarter) suffix.push(String(row.quarter).toLowerCase());
+  if (slug) {
+    return suffix.length ? `${slug}-${suffix.join('-')}` : slug;
+  }
+  const fallback = row.row ? `student-${row.row}` : `student-${Date.now()}`;
+  return `${fallback}-${uploadId.slice(0, 6)}`;
+}
+
 function summariseScores(rows: any[]) {
   const scores = rows
     .map((row) => (typeof row.data.score === 'number' ? row.data.score : null))
@@ -104,6 +121,124 @@ function summariseScores(rows: any[]) {
     min: scores[0],
     max: scores[scores.length - 1]
   };
+}
+
+const SERVER_GROUP_TOOLKIT: Record<string, { label: string; practices: string[] }> = {
+  foundation: {
+    label: 'Emerging understanding',
+    practices: [
+      'Front-load vocabulary and concepts with visuals, home-language bridges, and concrete representations.',
+      'Use collaborative talk moves, sentence frames, and restorative feedback to co-construct meaning.',
+      'Connect tasks to students’ lived experiences so they see their assets reflected in the content.'
+    ]
+  },
+  developing: {
+    label: 'Approaching mastery',
+    practices: [
+      'Facilitate mixed-ability discussions where learners explain their reasoning and critique sample work.',
+      'Offer choice boards, inquiry stems, or organizers that deepen conceptual understanding.',
+      'Co-create success criteria and reflection routines that build assessment literacy.'
+    ]
+  },
+  extending: {
+    label: 'Ready for extension',
+    practices: [
+      'Invite students to design projects that apply the standard to community issues they identify.',
+      'Position these learners as peer mentors and discussion leaders to elevate collective knowledge.',
+      'Encourage critical questioning, multiple solution paths, and opportunities for student leadership.'
+    ]
+  }
+};
+
+const UNIVERSAL_PRACTICES = {
+  summary:
+    'Ground instruction in culturally responsive, student-centered routines that honor learner voice, leverage collaboration, and provide multiple pathways into the content.',
+  bestPractices: [
+    'Plan with Universal Design for Learning: vary engagement, representation, and expression opportunities.',
+    'Embed critical pedagogy by connecting the standard to real-world issues students surface from their communities.',
+    'Use asset-based feedback loops and restorative conversations to highlight strengths alongside next steps.',
+    'Build collaborative structures (think-pair-share, jigsaw, peer critique) that amplify student agency.'
+  ],
+  reflectionPrompts: [
+    'Whose voices were centered in the last lesson and how will you widen participation next time?',
+    'What choices can students make to demonstrate mastery in ways that reflect their strengths and identities?',
+    'Which community or cultural connections will make this learning meaningful for your learners?'
+  ]
+};
+
+function describeScore(score: number | null) {
+  if (score === null || score === undefined || Number.isNaN(score)) return '—';
+  const rounded = Number(score.toFixed(1));
+  return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
+}
+
+function buildGroupInsightsForServer(rows: any[], summary: { average: number | null }) {
+  const scored = rows
+    .filter((row) => typeof row.data.score === 'number' && row.data.score !== null)
+    .sort((a, b) => (a.data.score ?? 0) - (b.data.score ?? 0));
+
+  if (!scored.length) {
+    return { groups: [], pedagogy: null };
+  }
+
+  const total = scored.length;
+  const foundationEnd = Math.min(total, Math.max(1, Math.round(total / 3)));
+  const developingEnd = Math.min(total, Math.max(foundationEnd + 1, Math.round((total * 2) / 3)));
+
+  const slices: Array<{ id: keyof typeof SERVER_GROUP_TOOLKIT; start: number; end: number }> = [
+    { id: 'foundation', start: 0, end: foundationEnd },
+    { id: 'developing', start: foundationEnd, end: developingEnd },
+    { id: 'extending', start: developingEnd, end: total }
+  ];
+
+  const groups = slices
+    .filter(({ start, end }) => start < end)
+    .map(({ id, start, end }) => {
+      const segment = scored.slice(start, end);
+      const toolkit = SERVER_GROUP_TOOLKIT[id];
+      const minScore = segment[0]?.data.score ?? null;
+      const maxScore = segment[segment.length - 1]?.data.score ?? null;
+      return {
+        id,
+        label: toolkit.label,
+        range: minScore !== null && maxScore !== null ? `${describeScore(minScore)}–${describeScore(maxScore)}` : '—',
+        studentCount: segment.length,
+        recommendedPractices: toolkit.practices,
+        students: segment.map((row) => ({
+          name: row.data.displayName,
+          score: row.data.score,
+          testName: row.data.testName,
+          period: row.data.period,
+          quarter: row.data.quarter,
+          sheetRow: row.row ?? null
+        }))
+      };
+    });
+
+  const foundationGroup = groups.find((group) => group.id === 'foundation');
+  const extendingGroup = groups.find((group) => group.id === 'extending');
+  const summaryParts: string[] = [];
+  if (summary.average !== null) {
+    summaryParts.push(`Class average is about ${describeScore(summary.average)}, showing shared areas for re-engagement.`);
+  }
+  if (foundationGroup) {
+    summaryParts.push(
+      `Plan targeted scaffolds for ${foundationGroup.studentCount} learners in the ${foundationGroup.label.toLowerCase()} group with community-connected examples.`
+    );
+  }
+  if (extendingGroup) {
+    summaryParts.push(
+      `Empower ${extendingGroup.studentCount} ${extendingGroup.label.toLowerCase()} learners to mentor peers and co-design inquiry tasks.`
+    );
+  }
+
+  const pedagogy = {
+    summary: summaryParts.length ? summaryParts.join(' ') : UNIVERSAL_PRACTICES.summary,
+    bestPractices: UNIVERSAL_PRACTICES.bestPractices,
+    reflectionPrompts: UNIVERSAL_PRACTICES.reflectionPrompts
+  };
+
+  return { groups, pedagogy };
 }
 
 async function getUpload(uid: string, uploadId: string) {
@@ -426,7 +561,9 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     const testKey = testName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `assessment-${Date.now()}`;
 
     validRows.forEach((row: any) => {
-      const ref = admin.firestore().collection(`users/${uid}/assessments`).doc();
+      const assessmentsCollection = admin.firestore().collection(`users/${uid}/assessments`);
+      const ref = assessmentsCollection.doc();
+      const assessmentId = ref.id;
       batch.set(ref, {
         displayName: row.data.displayName,
         nameVariants: row.data.nameVariants,
@@ -439,11 +576,43 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         createdAt: now,
         updatedAt: now
       });
+
+      const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row }, uploadId);
+      const studentRef = admin.firestore().doc(`users/${uid}/students/${studentIdentifier}`);
+      batch.set(
+        studentRef,
+        {
+          displayName: row.data.displayName,
+          nameVariants: row.data.nameVariants,
+          lastScore: row.data.score ?? null,
+          lastAssessment: row.data.testName ?? null,
+          period: row.data.period ?? null,
+          quarter: row.data.quarter ?? null,
+          lastUploadId: uploadId,
+          lastSheetRow: row.row ?? null,
+          updatedAt: now,
+          uploads: admin.firestore.FieldValue.increment(1)
+        },
+        { merge: true }
+      );
+
+      const historyRef = studentRef.collection('history').doc(assessmentId);
+      batch.set(historyRef, {
+        score: row.data.score ?? null,
+        testName: row.data.testName ?? null,
+        period: row.data.period ?? null,
+        quarter: row.data.quarter ?? null,
+        sheetRow: row.row ?? null,
+        uploadId,
+        createdAt: now
+      });
+
       written++;
     });
     skipped = reviewed.length - written;
 
     const summary = summariseScores(validRows);
+    const grouping = buildGroupInsightsForServer(validRows, { average: summary.average });
     const summaryRef = admin.firestore().doc(`users/${uid}/assessments_summary/${testKey}`);
     batch.set(summaryRef, {
       testName,
@@ -472,6 +641,66 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         updatedAt: now
       }
     }, { merge: true });
+
+    const workspaceRef = admin.firestore().doc(`users/${uid}/workspace_cache/rosterSnapshot`);
+    const scoredRows = validRows
+      .filter((row) => typeof row.data.score === 'number')
+      .sort((a, b) => (b.data.score ?? -Infinity) - (a.data.score ?? -Infinity));
+    const topHighlight = scoredRows.slice(0, 5).map((row) => ({
+      name: row.data.displayName,
+      score: row.data.score,
+      testName: row.data.testName,
+      period: row.data.period,
+      quarter: row.data.quarter,
+      sheetRow: row.row ?? null
+    }));
+    const bottomHighlight = scoredRows
+      .slice(-5)
+      .reverse()
+      .map((row) => ({
+        name: row.data.displayName,
+        score: row.data.score,
+        testName: row.data.testName,
+        period: row.data.period,
+        quarter: row.data.quarter,
+        sheetRow: row.row ?? null
+      }));
+    batch.set(
+      workspaceRef,
+      {
+        lastUploadId: uploadId,
+        updatedAt: now,
+        stats: {
+          lastUploadTotalRows: reviewed.length,
+          lastUploadValidRows: validRows.length,
+          latestStudentCount: summary.count
+        },
+        latestAssessment: {
+          testName,
+          period: periodForSummary,
+          quarter: quarterForSummary,
+          studentCount: summary.count,
+          averageScore: summary.average,
+          maxScore: summary.max,
+          minScore: summary.min
+        },
+        highlights: {
+          topStudents: topHighlight,
+          needsSupport: bottomHighlight
+        },
+        groupInsights: grouping.groups,
+        pedagogy: grouping.pedagogy,
+        recentStudents: validRows.slice(0, 25).map((row) => ({
+          name: row.data.displayName,
+          score: row.data.score,
+          testName: row.data.testName,
+          period: row.data.period,
+          quarter: row.data.quarter,
+          sheetRow: row.row ?? null
+        }))
+      },
+      { merge: true }
+    );
 
     await batch.commit();
     return json(200, {

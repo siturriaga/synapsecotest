@@ -12,6 +12,7 @@ import {
 import catalog from '../../data/standards/catalog.json'
 import { safeFetch } from '../utils/safeFetch'
 import { db } from '../firebase'
+import { useRosterData } from '../hooks/useRosterData'
 
 interface AssignmentsPageProps {
   user: User | null
@@ -40,6 +41,12 @@ type AssessmentLevel = {
   remediation: string[]
 }
 
+type PedagogyFocus = {
+  summary: string
+  bestPractices: string[]
+  reflectionPrompts: string[]
+}
+
 type AssessmentBlueprint = {
   standardCode: string
   standardName: string
@@ -51,6 +58,7 @@ type AssessmentBlueprint = {
     overview: string
     classStrategies: string[]
     nextSteps: string[]
+    pedagogy?: PedagogyFocus
   }
   levels: AssessmentLevel[]
 }
@@ -84,6 +92,102 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [assignments, setAssignments] = useState<Assignment[]>([])
+  const { insights, summaries, records, groupInsights, pedagogy } = useRosterData()
+
+  const latestSummary = useMemo(() => summaries[0] ?? null, [summaries])
+
+  const strugglingLearners = useMemo(() => {
+    const scored = records.filter((record) => typeof record.score === 'number')
+    if (!scored.length) return [] as string[]
+    const sorted = [...scored].sort((a, b) => {
+      const scoreA = a.score ?? 0
+      const scoreB = b.score ?? 0
+      return scoreA - scoreB
+    })
+    return sorted.slice(0, 3).map((record) => `${record.displayName} (${record.score ?? '—'})`)
+  }, [records])
+
+  const focusNarrative = useMemo(() => {
+    const parts: string[] = []
+    if (latestSummary?.testName) {
+      const averageText =
+        latestSummary.averageScore !== null
+          ? `averaged ${latestSummary.averageScore.toFixed(1)}`
+          : 'is awaiting average calculations'
+      parts.push(`Latest assessment ${latestSummary.testName} ${averageText}.`)
+    }
+    if (insights?.highest?.name && insights.highest.score !== null) {
+      parts.push(`${insights.highest.name} is excelling at ${insights.highest.score}.`)
+    }
+    if (strugglingLearners.length) {
+      parts.push(`Learners needing support: ${strugglingLearners.join(', ')}.`)
+    }
+    if (pedagogy?.summary) {
+      parts.push(pedagogy.summary)
+    }
+    const foundationGroup = groupInsights.find((group) => group.id === 'foundation')
+    if (foundationGroup) {
+      parts.push(
+        `Design scaffolds with student voice for ${foundationGroup.studentCount} learners in the ${foundationGroup.label.toLowerCase()} group.`
+      )
+    }
+    const extendingGroup = groupInsights.find((group) => group.id === 'extending')
+    if (extendingGroup) {
+      parts.push(
+        `Activate ${extendingGroup.studentCount} ${extendingGroup.label.toLowerCase()} learners as peer mentors and co-designers.`
+      )
+    }
+    if (!parts.length) {
+      parts.push('Use evidence-based instructional strategies connected to recent mastery trends.')
+    }
+    return parts.join(' ')
+  }, [insights, latestSummary, strugglingLearners, pedagogy, groupInsights])
+
+  const masterySummaryText = useMemo(() => {
+    if (!insights || !latestSummary) {
+      return 'Upload mastery rosters so the AI can anchor prompts to real class data.'
+    }
+    const segments: string[] = []
+    segments.push(
+      `Latest: ${latestSummary.testName}${
+        latestSummary.averageScore !== null ? ` · Avg ${latestSummary.averageScore.toFixed(1)}` : ''
+      }`
+    )
+    if (insights.highest?.name && insights.highest.score !== null) {
+      segments.push(`Top: ${insights.highest.name} ${insights.highest.score}`)
+    }
+    if (strugglingLearners.length) {
+      segments.push(`Needs support: ${strugglingLearners.join(', ')}`)
+    }
+    if (groupInsights.length) {
+      const summary = groupInsights
+        .map((group) => `${group.label.replace(/\s+/g, ' ')} ${group.range}`)
+        .join(' • ')
+      segments.push(`Groups: ${summary}`)
+    }
+    return segments.join(' • ')
+  }, [insights, latestSummary, strugglingLearners, groupInsights])
+
+  const classContext = useMemo(
+    () => ({
+      pedagogy: pedagogy
+        ? {
+            summary: pedagogy.summary,
+            bestPractices: pedagogy.bestPractices,
+            reflectionPrompts: pedagogy.reflectionPrompts
+          }
+        : null,
+      groups: groupInsights.map((group) => ({
+        id: group.id,
+        label: group.label,
+        range: group.range,
+        studentCount: group.studentCount,
+        recommendedPractices: group.recommendedPractices,
+        studentNames: group.students.map((student) => student.name)
+      }))
+    }),
+    [groupInsights, pedagogy]
+  )
 
   useEffect(() => {
     if (!subjectId || !gradeLevel) {
@@ -146,12 +250,13 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
         body: JSON.stringify({
           standardCode,
           standardName: standard?.name ?? standardCode,
-          focus: 'Align practice to recent mastery data and provide tiered remediation.',
+          focus: focusNarrative,
           subject: subjectLabel,
           grade: gradeLevel,
           assessmentType,
           questionCount,
-          includeRemediation
+          includeRemediation,
+          classContext
         })
       })
 
@@ -221,6 +326,13 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
           <ul>${blueprint.aiInsights.classStrategies.map((item) => `<li>${item}</li>`).join('')}</ul>
           <h2>Next steps</h2>
           <ul>${blueprint.aiInsights.nextSteps.map((item) => `<li>${item}</li>`).join('')}</ul>
+          ${blueprint.aiInsights.pedagogy
+            ? `<h2>Pedagogical focus</h2>
+               <p>${blueprint.aiInsights.pedagogy.summary}</p>
+               <ul>${blueprint.aiInsights.pedagogy.bestPractices.map((item) => `<li>${item}</li>`).join('')}</ul>
+               <h3>Reflection prompts</h3>
+               <ul>${blueprint.aiInsights.pedagogy.reflectionPrompts.map((item) => `<li>${item}</li>`).join('')}</ul>`
+            : ''}
           ${blueprint.levels
             .map(
               (level) => `
@@ -268,6 +380,86 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <div className="badge">AI assignment builder</div>
         <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Generate standards-aligned assessments</h2>
+        {masterySummaryText && (
+          <div
+            className="glass-subcard"
+            style={{
+              borderRadius: 16,
+              border: '1px solid rgba(99,102,241,0.25)',
+              background: 'rgba(15,23,42,0.45)',
+              padding: 16,
+              color: 'var(--text-muted)',
+              fontSize: 14
+            }}
+          >
+            <strong style={{ display: 'block', marginBottom: 6, color: '#cbd5f5', letterSpacing: 0.3 }}>
+              Linked mastery insight
+            </strong>
+            {masterySummaryText}
+          </div>
+        )}
+        {pedagogy && (
+          <div
+            className="glass-subcard"
+            style={{
+              borderRadius: 16,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: 'rgba(15,23,42,0.45)',
+              padding: 16,
+              color: 'var(--text-muted)',
+              fontSize: 14,
+              display: 'grid',
+              gap: 10
+            }}
+          >
+            <strong style={{ display: 'block', color: '#cbd5f5', letterSpacing: 0.3 }}>Pedagogical commitments</strong>
+            <p style={{ margin: 0 }}>{pedagogy.summary}</p>
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
+              {pedagogy.bestPractices.map((practice, index) => (
+                <li key={index}>{practice}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {groupInsights.length > 0 && (
+          <div
+            className="glass-subcard"
+            style={{
+              borderRadius: 16,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: 'rgba(15,23,42,0.45)',
+              padding: 16,
+              color: 'var(--text-muted)',
+              fontSize: 14,
+              display: 'grid',
+              gap: 12
+            }}
+          >
+            <strong style={{ display: 'block', color: '#cbd5f5', letterSpacing: 0.3 }}>Suggested learning groups</strong>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {groupInsights.map((group) => (
+                <div key={group.id} style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                    <span style={{ fontWeight: 600, color: '#e0e7ff' }}>{group.label}</span>
+                    <span style={{ fontSize: 13 }}>
+                      {group.range} • {group.studentCount} {group.studentCount === 1 ? 'learner' : 'learners'}
+                    </span>
+                  </div>
+                  {group.students.length > 0 && (
+                    <span style={{ fontSize: 13 }}>
+                      Learners: {group.students.map((student) => student.name).join(', ')}
+                    </span>
+                  )}
+                  <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+                    {group.recommendedPractices.map((practice, index) => (
+                      <li key={index}>{practice}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <form onSubmit={buildAssignment} style={{ display: 'grid', gap: 16 }}>
           <div className="field">
             <label htmlFor="assignment-title">Assignment title</label>
@@ -433,6 +625,19 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
                           ))}
                       </ul>
                     </div>
+                    {assignment.blueprint.aiInsights.pedagogy && (
+                      <div>
+                        <strong>Pedagogical focus</strong>
+                        <p style={{ margin: '8px 0 0', color: 'var(--text-muted)' }}>
+                          {assignment.blueprint.aiInsights.pedagogy.summary}
+                        </p>
+                        <ul style={{ margin: '8px 0 0 18px' }}>
+                          {assignment.blueprint.aiInsights.pedagogy.bestPractices.slice(0, 2).map((tip, index) => (
+                            <li key={index}>{tip}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
