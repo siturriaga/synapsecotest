@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { auth } from '../firebase'
+import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
 
