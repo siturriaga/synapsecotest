@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
+import type { SavedRosterUpload } from '../types/roster'
 
 interface RosterPageProps {
   user: User | null
@@ -51,6 +52,25 @@ type RowOverride = {
   testName?: string
 }
 
+function formatSize(bytes: number | null) {
+  if (bytes === null || bytes === undefined) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`
+  const mb = kb / 1024
+  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`
+}
+
+function base64ToBlob(base64: string, contentType: string) {
+  const byteCharacters = atob(base64)
+  const byteNumbers = new Array(byteCharacters.length)
+  for (let i = 0; i < byteCharacters.length; i += 1) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i)
+  }
+  const byteArray = new Uint8Array(byteNumbers)
+  return new Blob([byteArray], { type: contentType })
+}
+
 export default function RosterUploadPage({ user }: RosterPageProps) {
   const [file, setFile] = useState<File | null>(null)
   const [period, setPeriod] = useState('')
@@ -70,6 +90,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     insights,
     groupInsights,
     pedagogy,
+    uploads,
     syncStatus,
     syncError,
     lastSyncedAt,
@@ -108,6 +129,29 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     }
     return 'Waiting for first snapshot…'
   }, [syncStatus, syncError, lastSyncedAt])
+
+  const handleDownload = useCallback((upload: SavedRosterUpload) => {
+    try {
+      const base64 = upload.storage.kind === 'inline' ? upload.storage.data : upload.inlineData
+      if (!base64) {
+        setStatus(`Download unavailable for ${upload.filename}`)
+        return
+      }
+      const blob = base64ToBlob(base64, 'text/csv')
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = upload.filename || `roster-${upload.id}.csv`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      setStatus(`Downloaded ${upload.filename}`)
+    } catch (err) {
+      console.error(err)
+      setError('Unable to download the roster file right now.')
+    }
+  }, [])
 
   const buildManualOverrides = useCallback(() => {
     const payload: Record<number, any> = {}
@@ -687,6 +731,67 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </tbody>
         </table>
       )}
+      </section>
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="badge">Upload history</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Roster upload library</h3>
+          </div>
+          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+            {uploads.length ? `${uploads.length} recent files` : 'Waiting on your first upload'}
+          </span>
+        </header>
+        {uploads.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Every roster you preview or commit is stored securely. Download a prior CSV, reuse it for corrections, or confirm
+            what was shared with Gemini planning.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Assessment</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Uploaded</th>
+                <th>Size</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {uploads.map((upload) => (
+                <tr key={upload.id}>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 600 }}>{upload.filename}</span>
+                      {upload.storageWarning && (
+                        <span style={{ color: '#fbbf24', fontSize: 12 }}>{upload.storageWarning}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>{upload.testName ?? '—'}</td>
+                  <td>{upload.period ?? '—'}</td>
+                  <td>{upload.quarter ?? '—'}</td>
+                  <td>{upload.createdAt ? upload.createdAt.toLocaleString() : '—'}</td>
+                  <td>{formatSize(upload.size)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => handleDownload(upload)}
+                      style={{ padding: '6px 14px', fontSize: 13 }}
+                    >
+                      Download
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>

@@ -189,6 +189,21 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     [groupInsights, pedagogy]
   )
 
+  const gradeOptions = useMemo(() => {
+    if (!subjects.length) {
+      return [] as string[]
+    }
+    if (subjectId) {
+      const subject = subjects.find((entry) => entry.id === subjectId)
+      return Object.keys(subject?.grades ?? {}).sort((a, b) => Number(a) - Number(b))
+    }
+    const allGrades = new Set<string>()
+    subjects.forEach((subject) => {
+      Object.keys(subject.grades ?? {}).forEach((grade) => allGrades.add(grade))
+    })
+    return Array.from(allGrades).sort((a, b) => Number(a) - Number(b))
+  }, [subjectId, subjects])
+
   useEffect(() => {
     if (!subjectId || !gradeLevel) {
       setAvailableStandards([])
@@ -196,7 +211,13 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       return
     }
     const subject = subjects.find((entry) => entry.id === subjectId)
-    const standards = subject?.grades?.[gradeLevel]?.standards ?? []
+    if (!subject?.grades?.[gradeLevel]) {
+      setAvailableStandards([])
+      setStandardCode('')
+      setGradeLevel('')
+      return
+    }
+    const standards = subject.grades[gradeLevel]?.standards ?? []
     setAvailableStandards(standards)
     if (!standards.some((entry) => entry.code === standardCode)) {
       setStandardCode(standards[0]?.code ?? '')
@@ -490,20 +511,20 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
           </div>
           <div className="field">
             <label htmlFor="assignment-grade">Grade level</label>
-            <select
-              id="assignment-grade"
-              name="assignment-grade"
-              value={gradeLevel}
-              onChange={(event) => setGradeLevel(event.target.value)}
-              disabled={!subjectId}
-            >
-              <option value="">Select grade 6, 7, or 8</option>
-              {['6', '7', '8'].map((grade) => (
-                <option key={grade} value={grade}>
-                  Grade {grade}
-                </option>
-              ))}
-            </select>
+              <select
+                id="assignment-grade"
+                name="assignment-grade"
+                value={gradeLevel}
+                onChange={(event) => setGradeLevel(event.target.value)}
+                disabled={!subjectId || gradeOptions.length === 0}
+              >
+                <option value="">{subjectId ? 'Select a grade level' : 'Select a subject first'}</option>
+                {gradeOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    Grade {grade}
+                  </option>
+                ))}
+              </select>
           </div>
           <div className="field">
             <label htmlFor="assignment-standard">Standard</label>

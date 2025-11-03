@@ -62,3 +62,18 @@ export type PedagogicalGuidance = {
   bestPractices: string[]
   reflectionPrompts: string[]
 }
+
+export type SavedRosterUpload = {
+  id: string
+  filename: string
+  period: number | null
+  quarter: string | null
+  testName: string | null
+  createdAt: Date | null
+  size: number | null
+  storage:
+    | { kind: 'inline'; data: string }
+    | { kind: 'bucket'; objectPath: string }
+  storageWarning?: string | null
+  inlineData?: string | null
+}
