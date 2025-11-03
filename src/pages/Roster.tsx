@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { auth } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
+import { useRosterData } from '../hooks/useRosterData'
 
 interface RosterPageProps {
   user: User | null
@@ -10,30 +11,93 @@ interface RosterPageProps {
 type PreviewRow = {
   row: number
   status: 'ok' | 'needs_review'
-  data: { name: string | null; email: string | null; period: number | null; quarter: string | null }
+  data: {
+    displayName: string | null
+    nameVariants: string[]
+    period: number | null
+    quarter: string | null
+    score: number | null
+    testName: string | null
+  }
   issues?: string[]
+}
+
+type AssessmentSummary = {
+  count: number
+  average: number | null
+  median: number | null
+  min: number | null
+  max: number | null
 }
 
 type PreviewResponse = {
   rows: PreviewRow[]
   stats: { total: number; ok: number; needs_review: number }
+  assessmentSummary: AssessmentSummary
 }
 
 type CommitResponse = {
   written: number
   skipped: number
   collection: string
+  assessmentSummary: AssessmentSummary
 }
 
 export default function RosterUploadPage({ user }: RosterPageProps) {
   const [file, setFile] = useState<File | null>(null)
   const [period, setPeriod] = useState('1')
   const [quarter, setQuarter] = useState('Q1')
+  const [testName, setTestName] = useState('')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [uploadId, setUploadId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const {
+    loading: rosterLoading,
+    records,
+    summaries,
+    insights,
+    groupInsights,
+    pedagogy,
+    syncStatus,
+    syncError,
+    lastSyncedAt,
+    triggerSync
+  } = useRosterData()
+
+  const summary = useMemo(() => preview?.assessmentSummary, [preview])
+  const previewDetails = useMemo(() => {
+    if (!preview) {
+      return {
+        testName: testName.trim() || null,
+        period: period ? Number(period) : null,
+        quarter: quarter || null
+      }
+    }
+    const test = preview.rows.find((row) => row.data.testName)
+    const periodRow = preview.rows.find((row) => row.data.period !== null)
+    const quarterRow = preview.rows.find((row) => row.data.quarter)
+    return {
+      testName: (test?.data.testName || testName || '').trim() || null,
+      period: periodRow?.data.period ?? (period ? Number(period) : null),
+      quarter: quarterRow?.data.quarter ?? (quarter || null)
+    }
+  }, [preview, testName, period, quarter])
+
+  const autoSaveStatus = useMemo(() => {
+    if (syncStatus === 'saving') return 'Saving workspace snapshot…'
+    if (syncStatus === 'error') return syncError ?? 'Auto-save error'
+    if (lastSyncedAt) {
+      const deltaSeconds = Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000)
+      if (deltaSeconds < 60) return `Snapshot saved ${deltaSeconds}s ago`
+      const deltaMinutes = Math.floor(deltaSeconds / 60)
+      if (deltaMinutes < 60) return `Snapshot saved ${deltaMinutes}m ago`
+      const deltaHours = Math.floor(deltaMinutes / 60)
+      return `Snapshot saved ${deltaHours}h ago`
+    }
+    return 'Waiting for first snapshot…'
+  }, [syncStatus, syncError, lastSyncedAt])
 
   async function uploadFile(mode: 'preview' | 'commit') {
     if (!user || !file) {
@@ -51,7 +115,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         const token = await auth.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
-        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}`, {
+        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: form
@@ -77,9 +141,17 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setStatus('Preview ready — resolve any issues before committing.')
       } else {
         const commit = response as CommitResponse
-        setStatus(`Synced ${commit.written} students. Skipped ${commit.skipped}.`)
+        const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
+        setStatus(`Synced ${commit.written} learners. Skipped ${commit.skipped}.${averageText}`)
         setPreview(null)
         setUploadId(null)
+        setFile(null)
+        setTestName('')
+        try {
+          await triggerSync()
+        } catch (syncErr) {
+          console.error('Unable to force roster snapshot sync', syncErr)
+        }
       }
     } catch (err: any) {
       console.error(err)
@@ -104,9 +176,9 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX rosters</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX mastery exports</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Synapse validates email, period, and quarter fields before persisting to Firestore. Preview first to resolve flagged rows.
+          Synapse validates student names, periods, quarters, test names, and scores before persisting to Firestore. Preview first to resolve flagged rows. No student data leaves your encrypted workspace.
         </p>
         <form
           onSubmit={(event) => {
@@ -123,6 +195,18 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               accept=".csv,.xlsx,.xls,.pdf,.docx"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="roster-test">
+              Name of the test or benchmark <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>(optional)</span>
+            </label>
+            <input
+              id="roster-test"
+              name="roster-test"
+              value={testName}
+              onChange={(event) => setTestName(event.target.value)}
+              placeholder="e.g., Q2 Expressions Mastery Check"
             />
           </div>
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
@@ -157,7 +241,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
             <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Preview roster'}
+              {loading ? 'Processing…' : 'Preview mastery data'}
             </button>
             <button
               type="button"
@@ -171,22 +255,81 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         </form>
         {status && <p style={{ marginTop: 14, color: 'var(--text-muted)' }}>{status}</p>}
         {error && <p style={{ marginTop: 14, color: '#fecaca' }}>{error}</p>}
+        <div
+          style={{
+            marginTop: 20,
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(15,23,42,0.45)',
+            border: '1px solid rgba(148,163,184,0.25)',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}
+        >
+          <strong style={{ fontSize: 14, letterSpacing: 0.4 }}>Workspace auto-save</strong>
+          <span
+            style={{
+              color: syncStatus === 'error' ? '#fecaca' : 'var(--text-muted)',
+              fontSize: 14
+            }}
+          >
+            {autoSaveStatus}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginLeft: 'auto', padding: '6px 14px' }}
+            onClick={() => {
+              void triggerSync()
+            }}
+            disabled={syncStatus === 'saving'}
+          >
+            {syncStatus === 'saving' ? 'Saving…' : 'Sync now'}
+          </button>
+        </div>
       </section>
 
       {preview && (
-        <section className="glass-card">
-          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
-          <p style={{ color: 'var(--text-muted)' }}>
-            {preview.stats.ok} rows ready • {preview.stats.needs_review} need attention.
-          </p>
-          <table className="table" style={{ marginTop: 16 }}>
+        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
+              <p style={{ color: 'var(--text-muted)' }}>
+                {preview.stats.ok} learners ready • {preview.stats.needs_review} need attention.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
+              <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
+                <strong>Test details</strong>
+                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
+                  <span>Assessment: {previewDetails.testName ?? '—'}</span>
+                  <span>Period: {previewDetails.period ?? '—'} · Quarter: {previewDetails.quarter ?? '—'}</span>
+                </div>
+              </div>
+              {summary && (
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
+                  <strong>Assessment snapshot</strong>
+                  <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
+                    <span>Average: {summary.average !== null ? summary.average.toFixed(1) : '—'}</span>
+                    <span>Median: {summary.median !== null ? summary.median.toFixed(1) : '—'}</span>
+                    <span>High: {summary.max !== null ? summary.max.toFixed(1) : '—'} · Low: {summary.min !== null ? summary.min.toFixed(1) : '—'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <table className="table">
             <thead>
               <tr>
                 <th>Row</th>
-                <th>Name</th>
-                <th>Email</th>
+                <th>Student name</th>
+                <th>Alternate names</th>
                 <th>Period</th>
                 <th>Quarter</th>
+                <th>Score</th>
+                <th>Assessment</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -194,10 +337,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               {preview.rows.map((row) => (
                 <tr key={row.row}>
                   <td>{row.row}</td>
-                  <td>{row.data.name || '—'}</td>
-                  <td>{row.data.email || '—'}</td>
+                  <td>{row.data.displayName || '—'}</td>
+                  <td>{row.data.nameVariants.length > 1 ? row.data.nameVariants.slice(1).join(', ') : '—'}</td>
                   <td>{row.data.period ?? '—'}</td>
                   <td>{row.data.quarter ?? '—'}</td>
+                  <td>{row.data.score !== null ? row.data.score : '—'}</td>
+                  <td>{row.data.testName || testName || '—'}</td>
                   <td>
                     {row.status === 'ok' ? (
                       <span className="status-success">Validated</span>
@@ -211,6 +356,215 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </table>
         </section>
       )}
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="badge">Class statistics</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Saved assessment summaries</h3>
+          </div>
+          <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
+            Print
+          </button>
+        </header>
+        {insights && (
+          <div
+            className="glass-subcard"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 18,
+              padding: 16,
+              borderRadius: 16,
+              border: '1px solid rgba(99,102,241,0.25)',
+              background: 'rgba(15,23,42,0.45)'
+            }}
+          >
+            <div style={{ minWidth: 180 }}>
+              <strong>Total learners</strong>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{insights.totalStudents || '—'}</div>
+            </div>
+            <div style={{ minWidth: 180 }}>
+              <strong>Class average</strong>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>
+                {insights.averageScore !== null ? insights.averageScore.toFixed(1) : '—'}
+              </div>
+            </div>
+            {insights.highest && (
+              <div style={{ minWidth: 220 }}>
+                <strong>Top performer</strong>
+                <div style={{ fontSize: 15, marginTop: 6 }}>
+                  {insights.highest.name} · {insights.highest.score ?? '—'}
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    {insights.highest.testName ?? 'Assessment'}
+                  </div>
+                </div>
+              </div>
+            )}
+            {insights.lowest && (
+              <div style={{ minWidth: 220 }}>
+                <strong>Needs support</strong>
+                <div style={{ fontSize: 15, marginTop: 6 }}>
+                  {insights.lowest.name} · {insights.lowest.score ?? '—'}
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    {insights.lowest.testName ?? 'Assessment'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {(groupInsights.length > 0 || pedagogy) && (
+          <div
+            className="glass-subcard"
+            style={{
+              display: 'grid',
+              gap: 18,
+              padding: 18,
+              borderRadius: 16,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: 'rgba(15,23,42,0.45)'
+            }}
+          >
+            {pedagogy && (
+              <div>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Pedagogical commitments</strong>
+                <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>{pedagogy.summary}</p>
+                <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)', fontSize: 14, display: 'grid', gap: 6 }}>
+                  {pedagogy.bestPractices.map((practice, index) => (
+                    <li key={index}>{practice}</li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 12 }}>
+                  <summary style={{ cursor: 'pointer', color: '#cbd5f5' }}>Reflection prompts</summary>
+                  <ul style={{ margin: '10px 0 0 18px', color: 'var(--text-muted)', fontSize: 14, display: 'grid', gap: 6 }}>
+                    {pedagogy.reflectionPrompts.map((prompt, index) => (
+                      <li key={index}>{prompt}</li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            )}
+            {groupInsights.length > 0 && (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <strong>Suggested learning groups</strong>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {groupInsights.map((group) => (
+                    <div
+                      key={group.id}
+                      style={{
+                        border: '1px solid rgba(99,102,241,0.25)',
+                        borderRadius: 14,
+                        padding: 14,
+                        background: 'rgba(15,23,42,0.55)',
+                        display: 'grid',
+                        gap: 8
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{group.label}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                          {group.range} • {group.studentCount} {group.studentCount === 1 ? 'learner' : 'learners'}
+                        </span>
+                      </div>
+                      {group.students.length > 0 && (
+                        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 14 }}>
+                          Learners: {group.students.map((student) => student.name).join(', ')}
+                        </p>
+                      )}
+                      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, color: 'var(--text-muted)', fontSize: 14 }}>
+                        {group.recommendedPractices.map((practice, index) => (
+                          <li key={index}>{practice}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {rosterLoading ? (
+          <div style={{ color: 'var(--text-muted)' }}>Loading saved summaries…</div>
+        ) : summaries.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Upload mastery files to generate class-level averages and ranges. Summaries feed the dashboard and AI planning tools.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Assessment</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Average</th>
+                <th>High</th>
+                <th>Low</th>
+                <th>Learners</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((record) => (
+                <tr key={record.id}>
+                  <td>{record.testName}</td>
+                  <td>{record.period ?? '—'}</td>
+                  <td>{record.quarter ?? '—'}</td>
+                  <td>{record.averageScore !== null ? record.averageScore.toFixed(1) : '—'}</td>
+                  <td>{record.maxScore ?? '—'}</td>
+                  <td>{record.minScore ?? '—'}</td>
+                  <td>{record.studentCount ?? '—'}</td>
+                  <td>{record.updatedAt ? record.updatedAt.toLocaleString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      </section>
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="badge">Individual records</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Latest mastery uploads</h3>
+          </div>
+          <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
+            Print
+          </button>
+        </header>
+        {records.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Once you commit a roster, the secure roster library shows each learner’s score, period, and test name here for quick reference and AI planning.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Score</th>
+                <th>Assessment</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Source row</th>
+                <th>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((record) => (
+                <tr key={record.id}>
+                  <td>{record.displayName}</td>
+                  <td>{record.score !== null ? record.score : '—'}</td>
+                  <td>{record.testName ?? '—'}</td>
+                  <td>{record.period ?? '—'}</td>
+                  <td>{record.quarter ?? '—'}</td>
+                  <td>{record.sheetRow ?? '—'}</td>
+                  <td>{record.createdAt ? record.createdAt.toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </div>
   )
 }
