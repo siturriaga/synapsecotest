@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { auth } from '../firebase'
+import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
 import { AssistedHint } from '../components/core/AssistedHint'
@@ -22,6 +22,14 @@ type PreviewRow = {
   }
   issues?: string[]
   warnings?: string[]
+}
+
+type AssessmentSummary = {
+  count: number
+  average: number | null
+  median: number | null
+  min: number | null
+  max: number | null
 }
 
 type AssessmentSummary = {
