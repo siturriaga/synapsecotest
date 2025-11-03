@@ -1,0 +1,92 @@
+{
+  "subjects": [
+    {
+      "id": "math",
+      "label": "Mathematics",
+      "grades": {
+        "6": {
+          "standards": [
+            {
+              "code": "MA.6.AR.1.1",
+              "name": "Interpret ratios to describe relationships between quantities."
+            },
+            {
+              "code": "MA.6.AR.2.2",
+              "name": "Solve real-world problems involving division of fractions."
+            }
+          ]
+        },
+        "7": {
+          "standards": [
+            {
+              "code": "MA.7.AR.1.1",
+              "name": "Apply properties of operations to add and subtract linear expressions with rational coefficients."
+            },
+            {
+              "code": "MA.7.AR.2.1",
+              "name": "Write and solve one-step inequalities in one variable within a mathematical context."
+            },
+            {
+              "code": "MA.7.AR.3.1",
+              "name": "Solve multi-step percent problems involving discounts and markups."
+            }
+          ]
+        },
+        "8": {
+          "standards": [
+            {
+              "code": "MA.8.F.1.1",
+              "name": "Compare properties of two functions represented in different ways."
+            },
+            {
+              "code": "MA.8.F.2.3",
+              "name": "Use functions to model relationships between quantities."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ela",
+      "label": "English Language Arts",
+      "grades": {
+        "6": {
+          "standards": [
+            {
+              "code": "ELA.6.R.1.1",
+              "name": "Analyze how themes are developed through details."
+            },
+            {
+              "code": "ELA.6.R.2.2",
+              "name": "Explain how text structures contribute to the central idea."
+            }
+          ]
+        },
+        "7": {
+          "standards": [
+            {
+              "code": "ELA.7.R.1.2",
+              "name": "Explain how literary elements interact to create meaning."
+            },
+            {
+              "code": "ELA.7.R.2.1",
+              "name": "Analyze the impact of rhetorical devices on meaning."
+            }
+          ]
+        },
+        "8": {
+          "standards": [
+            {
+              "code": "ELA.8.R.1.1",
+              "name": "Cite textual evidence to support analysis of what the text says explicitly."
+            },
+            {
+              "code": "ELA.8.R.2.4",
+              "name": "Analyze how an author develops a claim."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
