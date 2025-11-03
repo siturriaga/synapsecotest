@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import {
   Timestamp,
@@ -9,28 +9,95 @@ import {
   onSnapshot,
   updateDoc
 } from 'firebase/firestore'
+import catalog from '../../data/standards/catalog.json'
+import { safeFetch } from '../utils/safeFetch'
 import { db } from '../firebase'
 
 interface AssignmentsPageProps {
   user: User | null
 }
 
+type Standard = { code: string; name: string }
+
+type Subject = {
+  id: string
+  label: string
+  grades: Record<string, { standards: Standard[] }>
+}
+
+type AssessmentQuestion = {
+  id: string
+  prompt: string
+  options?: string[]
+  answer: string
+  rationale: string
+}
+
+type AssessmentLevel = {
+  level: string
+  description: string
+  questions: AssessmentQuestion[]
+  remediation: string[]
+}
+
+type AssessmentBlueprint = {
+  standardCode: string
+  standardName: string
+  subject: string
+  grade: string
+  assessmentType: string
+  questionCount: number
+  aiInsights: {
+    overview: string
+    classStrategies: string[]
+    nextSteps: string[]
+  }
+  levels: AssessmentLevel[]
+}
+
 type Assignment = {
   id: string
   title: string
-  standardCode: string
-  tier: 'emerging' | 'on-level' | 'accelerated'
-  dueDate?: string
   status: 'draft' | 'assigned' | 'completed'
+  dueDate?: string
+  blueprint?: AssessmentBlueprint
+  createdAt?: string
 }
 
+const ASSESSMENT_TYPES = [
+  { value: 'multiple_choice', label: 'Multiple choice quiz' },
+  { value: 'reading_plus', label: 'Reading plus text-dependent questions' },
+  { value: 'matching', label: 'Matching definitions to concepts' }
+]
+
 export default function AssignmentsPage({ user }: AssignmentsPageProps) {
-  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const subjects = useMemo(() => catalog.subjects as Subject[], [])
+  const [subjectId, setSubjectId] = useState('')
+  const [gradeLevel, setGradeLevel] = useState('')
+  const [standardCode, setStandardCode] = useState('')
+  const [availableStandards, setAvailableStandards] = useState<Standard[]>([])
+  const [assessmentType, setAssessmentType] = useState(ASSESSMENT_TYPES[0].value)
+  const [questionCount, setQuestionCount] = useState(5)
   const [title, setTitle] = useState('')
-  const [standardCode, setStandardCode] = useState('MA.7.AR.1.1')
-  const [tier, setTier] = useState<Assignment['tier']>('emerging')
   const [dueDate, setDueDate] = useState('')
+  const [includeRemediation, setIncludeRemediation] = useState(true)
   const [statusMessage, setStatusMessage] = useState<string>('')
+  const [loading, setLoading] = useState(false)
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+
+  useEffect(() => {
+    if (!subjectId || !gradeLevel) {
+      setAvailableStandards([])
+      setStandardCode('')
+      return
+    }
+    const subject = subjects.find((entry) => entry.id === subjectId)
+    const standards = subject?.grades?.[gradeLevel]?.standards ?? []
+    setAvailableStandards(standards)
+    if (!standards.some((entry) => entry.code === standardCode)) {
+      setStandardCode(standards[0]?.code ?? '')
+    }
+  }, [subjectId, gradeLevel, subjects, standardCode])
 
   useEffect(() => {
     if (!user) {
@@ -44,11 +111,11 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          title: data.title,
-          standardCode: data.standardCode,
-          tier: data.tier || 'emerging',
+          title: data.title ?? 'AI assignment',
+          status: data.status ?? 'draft',
           dueDate: data.dueDate,
-          status: data.status || 'draft'
+          blueprint: data.blueprint,
+          createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null
         })
       })
       setAssignments(rows)
@@ -56,24 +123,58 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     return () => unsub()
   }, [user])
 
-  async function createAssignment(event: React.FormEvent) {
+  async function buildAssignment(event: React.FormEvent) {
     event.preventDefault()
     if (!user) return
-    if (!title.trim()) {
-      setStatusMessage('Title is required.')
+    if (!subjectId || !gradeLevel || !standardCode) {
+      setStatusMessage('Complete the subject, grade, and standard selections.')
       return
     }
-    await addDoc(collection(db, `users/${user.uid}/assignments`), {
-      title,
-      standardCode,
-      tier,
-      status: 'draft',
-      dueDate: dueDate || null,
-      createdAt: Timestamp.now()
-    })
-    setTitle('')
-    setDueDate('')
-    setStatusMessage('Assignment created.')
+    if (!title.trim()) {
+      setStatusMessage('Provide a title so the assignment is easy to find later.')
+      return
+    }
+
+    const subjectLabel = subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId
+    const standard = availableStandards.find((entry) => entry.code === standardCode)
+
+    try {
+      setLoading(true)
+      setStatusMessage('Generating AI assessment…')
+      const blueprint = await safeFetch<AssessmentBlueprint>('/.netlify/functions/generateAssignment', {
+        method: 'POST',
+        body: JSON.stringify({
+          standardCode,
+          standardName: standard?.name ?? standardCode,
+          focus: 'Align practice to recent mastery data and provide tiered remediation.',
+          subject: subjectLabel,
+          grade: gradeLevel,
+          assessmentType,
+          questionCount,
+          includeRemediation
+        })
+      })
+
+      await addDoc(collection(db, `users/${user.uid}/assignments`), {
+        title,
+        status: 'draft',
+        dueDate: dueDate || null,
+        createdAt: Timestamp.now(),
+        blueprint,
+        standardCode: blueprint.standardCode,
+        assessmentType: blueprint.assessmentType,
+        questionCount: blueprint.questionCount
+      })
+
+      setStatusMessage('Assignment generated and saved securely.')
+      setTitle('')
+      setDueDate('')
+    } catch (error: any) {
+      console.error(error)
+      setStatusMessage(error?.message ?? 'Assignment generation failed.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function updateStatus(id: string, status: Assignment['status']) {
@@ -88,12 +189,75 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     setStatusMessage('Assignment deleted.')
   }
 
+  function printAssignment(assignment: Assignment) {
+    if (!assignment.blueprint) {
+      window.print()
+      return
+    }
+    const win = window.open('', '_blank')
+    if (!win) return
+    const blueprint = assignment.blueprint
+    const html = `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${assignment.title}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 32px; color: #0f172a; }
+            h1 { font-size: 24px; margin-bottom: 8px; }
+            h2 { font-size: 18px; margin-top: 24px; }
+            ul { margin: 0 0 16px 20px; }
+            .question { border: 1px solid #cbd5f5; padding: 12px; border-radius: 12px; margin-bottom: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>${assignment.title}</h1>
+          <p><strong>Standard:</strong> ${blueprint.standardCode} — ${blueprint.standardName}</p>
+          <p><strong>Assessment type:</strong> ${blueprint.assessmentType.replace(/_/g, ' ')}</p>
+          <p><strong>Questions:</strong> ${blueprint.questionCount}</p>
+          <h2>AI overview</h2>
+          <p>${blueprint.aiInsights.overview}</p>
+          <h2>Class strategies</h2>
+          <ul>${blueprint.aiInsights.classStrategies.map((item) => `<li>${item}</li>`).join('')}</ul>
+          <h2>Next steps</h2>
+          <ul>${blueprint.aiInsights.nextSteps.map((item) => `<li>${item}</li>`).join('')}</ul>
+          ${blueprint.levels
+            .map(
+              (level) => `
+                <section>
+                  <h2>${level.level}</h2>
+                  <p>${level.description}</p>
+                  ${level.questions
+                    .map(
+                      (question) => `
+                        <div class="question">
+                          <strong>Prompt:</strong> ${question.prompt}
+                          ${question.options ? `<ol>${question.options.map((option) => `<li>${option}</li>`).join('')}</ol>` : ''}
+                          <p><strong>Answer:</strong> ${question.answer}</p>
+                          <p><em>${question.rationale}</em></p>
+                        </div>
+                      `
+                    )
+                    .join('')}
+                  ${level.remediation.length ? `<h3>Remediation</h3><ul>${level.remediation.map((tip) => `<li>${tip}</li>`).join('')}</ul>` : ''}
+                </section>
+              `
+            )
+            .join('')}
+        </body>
+      </html>`
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+    win.print()
+  }
+
   if (!user) {
     return (
       <div className="glass-card fade-in">
         <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Authenticate to manage assignments</h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          Assignments are stored securely within your Firestore workspace scope.
+          Assignments and AI blueprints are saved privately to your workspace. No student data leaves your secured scope.
         </p>
       </div>
     )
@@ -101,41 +265,99 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
 
   return (
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
-      <section className="glass-card">
-        <div className="badge">Create assignment</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Launch differentiated tasks</h2>
-        <form onSubmit={createAssignment}>
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <div className="badge">AI assignment builder</div>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Generate standards-aligned assessments</h2>
+        <form onSubmit={buildAssignment} style={{ display: 'grid', gap: 16 }}>
           <div className="field">
-            <label htmlFor="assignment-title">Title</label>
+            <label htmlFor="assignment-title">Assignment title</label>
             <input
               id="assignment-title"
               name="assignment-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g., Expressions mastery checkpoint"
               required
             />
           </div>
           <div className="field">
-            <label htmlFor="assignment-standard">Standard code</label>
-            <input
+            <label htmlFor="assignment-subject">Subject</label>
+            <select
+              id="assignment-subject"
+              name="assignment-subject"
+              value={subjectId}
+              onChange={(event) => setSubjectId(event.target.value)}
+            >
+              <option value="">Select a subject</option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="assignment-grade">Grade level</label>
+            <select
+              id="assignment-grade"
+              name="assignment-grade"
+              value={gradeLevel}
+              onChange={(event) => setGradeLevel(event.target.value)}
+              disabled={!subjectId}
+            >
+              <option value="">Select grade 6, 7, or 8</option>
+              {['6', '7', '8'].map((grade) => (
+                <option key={grade} value={grade}>
+                  Grade {grade}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="assignment-standard">Standard</label>
+            <select
               id="assignment-standard"
               name="assignment-standard"
               value={standardCode}
               onChange={(event) => setStandardCode(event.target.value)}
-              required
-            />
+              disabled={!gradeLevel || availableStandards.length === 0}
+            >
+              <option value="">Select a standard</option>
+              {availableStandards.map((standard) => (
+                <option key={standard.code} value={standard.code}>
+                  {standard.code} — {standard.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field">
-            <label htmlFor="assignment-tier">Tier</label>
+            <label htmlFor="assignment-type">Assessment type</label>
             <select
-              id="assignment-tier"
-              name="assignment-tier"
-              value={tier}
-              onChange={(event) => setTier(event.target.value as Assignment['tier'])}
+              id="assignment-type"
+              name="assignment-type"
+              value={assessmentType}
+              onChange={(event) => setAssessmentType(event.target.value)}
             >
-              <option value="emerging">Emerging</option>
-              <option value="on-level">On-level</option>
-              <option value="accelerated">Accelerated</option>
+              {ASSESSMENT_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="assignment-questions">Question count</label>
+            <select
+              id="assignment-questions"
+              name="assignment-questions"
+              value={questionCount}
+              onChange={(event) => setQuestionCount(Number(event.target.value))}
+            >
+              {[5, 10, 15].map((count) => (
+                <option key={count} value={count}>
+                  {count} questions
+                </option>
+              ))}
             </select>
           </div>
           <div className="field">
@@ -148,44 +370,80 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
               onChange={(event) => setDueDate(event.target.value)}
             />
           </div>
-          <button type="submit" className="primary">Create assignment</button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              type="checkbox"
+              checked={includeRemediation}
+              onChange={(event) => setIncludeRemediation(event.target.checked)}
+            />
+            Include remediation pathways
+          </label>
+          <button type="submit" className="primary" disabled={loading}>
+            {loading ? 'Generating…' : 'Generate and save assignment'}
+          </button>
         </form>
-        {statusMessage && <p style={{ marginTop: 12, color: 'var(--text-muted)' }}>{statusMessage}</p>}
+        {statusMessage && <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>{statusMessage}</p>}
       </section>
 
-      <section className="glass-card">
-        <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Assignment tracker</h3>
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Assignments library</h3>
+            <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>Print, remediate, or assign at any time.</p>
+          </div>
+        </header>
         {assignments.length === 0 ? (
-          <div className="empty-state">Create an assignment to populate this table.</div>
+          <div className="empty-state">Generate an assignment to populate this library.</div>
         ) : (
-          <table className="table" style={{ marginTop: 16 }}>
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Standard</th>
-                <th>Tier</th>
-                <th>Due date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignments.map((assignment) => (
-                <tr key={assignment.id}>
-                  <td>{assignment.title}</td>
-                  <td>{assignment.standardCode}</td>
-                  <td style={{ textTransform: 'capitalize' }}>{assignment.tier.replace('-', ' ')}</td>
-                  <td>{assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : '—'}</td>
-                  <td style={{ textTransform: 'capitalize' }}>{assignment.status}</td>
-                  <td style={{ display: 'flex', gap: 8 }}>
-                    <button className="secondary" onClick={() => updateStatus(assignment.id, 'assigned')}>Mark assigned</button>
-                    <button className="secondary" onClick={() => updateStatus(assignment.id, 'completed')}>Mark complete</button>
-                    <button className="secondary" onClick={() => removeAssignment(assignment.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ display: 'grid', gap: 16 }}>
+            {assignments.map((assignment) => (
+              <article key={assignment.id} className="glass-subcard" style={{ border: '1px solid rgba(148,163,184,0.25)', borderRadius: 18, padding: 18, background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 12 }}>
+                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 20 }}>{assignment.title}</h4>
+                    {assignment.blueprint && (
+                      <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>
+                        {assignment.blueprint.standardCode} · {assignment.blueprint.assessmentType.replace(/_/g, ' ')} · {assignment.blueprint.questionCount} questions
+                      </p>
+                    )}
+                    {assignment.dueDate && (
+                      <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>Due {new Date(assignment.dueDate).toLocaleDateString()}</p>
+                    )}
+                  </div>
+                  <span className="tag" style={{ textTransform: 'capitalize' }}>{assignment.status}</span>
+                </header>
+                {assignment.blueprint && (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div>
+                      <strong>AI insights</strong>
+                      <ul style={{ margin: '8px 0 0 18px' }}>
+                        {assignment.blueprint.aiInsights.classStrategies.slice(0, 2).map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <strong>Remediation</strong>
+                      <ul style={{ margin: '8px 0 0 18px' }}>
+                        {assignment.blueprint.levels
+                          .flatMap((level) => level.remediation)
+                          .slice(0, 3)
+                          .map((tip, index) => (
+                            <li key={index}>{tip}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                  <button className="secondary" onClick={() => updateStatus(assignment.id, 'assigned')}>Mark assigned</button>
+                  <button className="secondary" onClick={() => updateStatus(assignment.id, 'completed')}>Mark complete</button>
+                  <button className="secondary" onClick={() => printAssignment(assignment)}>Print</button>
+                  <button className="secondary" onClick={() => removeAssignment(assignment.id)}>Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
         )}
       </section>
     </div>
