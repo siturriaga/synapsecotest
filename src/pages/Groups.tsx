@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
+import { useRosterData } from '../hooks/useRosterData'
 
 type Student = {
+  id: string
   name: string
-  email: string
   period?: number | null
   quarter?: string | null
-  readiness?: string
+  readiness?: string | null
+  score?: number | null
 }
 
 type Group = {
@@ -19,50 +19,72 @@ type Group = {
   students: Student[]
 }
 
+function describeReadiness(score: number | null): string | null {
+  if (score === null || Number.isNaN(score)) return null
+  if (score >= 85) return `Extending mastery (${Math.round(score)}%)`
+  if (score >= 70) return `Developing understanding (${Math.round(score)}%)`
+  return `Foundation support needed (${Math.round(score)}%)`
+}
+
 export default function StudentGroupsPage({ user }: { user: User | null }) {
-  const [roster, setRoster] = useState<Student[]>([])
+  const { students, records, loading: rosterLoading } = useRosterData()
+  const roster = useMemo<Student[]>(() => {
+    if (students.length) {
+      return students.map((student) => {
+        const score = typeof student.lastScore === 'number' ? student.lastScore : null
+        return {
+          id: student.id,
+          name: student.displayName,
+          period: student.period ?? null,
+          quarter: student.quarter ?? null,
+          score,
+          readiness: describeReadiness(score)
+        }
+      })
+    }
+
+    if (!records.length) return []
+
+    const deduped = new Map<string, Student>()
+    records.forEach((record) => {
+      const id = record.studentId ?? record.displayName.toLowerCase()
+      const score = typeof record.score === 'number' ? record.score : null
+      const readiness = describeReadiness(score)
+      const existing = deduped.get(id)
+      if (!existing || (score !== null && (existing.score ?? -Infinity) < score)) {
+        deduped.set(id, {
+          id,
+          name: record.displayName,
+          period: record.period ?? null,
+          quarter: record.quarter ?? null,
+          score,
+          readiness
+        })
+      }
+    })
+
+    return Array.from(deduped.values())
+  }, [records, students])
   const [loading, setLoading] = useState(false)
   const [groups, setGroups] = useState<Group[]>([])
   const [mode, setMode] = useState<'heterogeneous' | 'homogeneous'>('heterogeneous')
   const [error, setError] = useState<string | null>(null)
   const [suggestedChips, setSuggestedChips] = useState<string[]>([])
 
-  useEffect(() => {
-    async function loadRoster() {
-      if (!user) {
-        setRoster([])
-        return
-      }
-      const snap = await getDocs(collection(db, `users/${user.uid}/roster`))
-      const rows: Student[] = []
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as any
-        rows.push({
-          name: data.name ?? 'Unknown',
-          email: data.email,
-          period: data.period ?? null,
-          quarter: data.quarter ?? null,
-          readiness: data.readiness ?? data.level ?? null
-        })
-      })
-      setRoster(rows)
-    }
-    loadRoster().catch((err) => {
-      console.error(err)
-      setError('Failed to load roster. Ensure Firestore security rules allow access for your account.')
-    })
-  }, [user])
-
   const metadata = useMemo(() => {
-    if (roster.length === 0) return 'No roster loaded'
+    if (roster.length === 0) return rosterLoading ? 'Loading roster…' : 'No roster loaded'
     const periods = new Set(roster.map((s) => s.period).filter(Boolean))
     const quarters = new Set(roster.map((s) => s.quarter).filter(Boolean))
     return `${roster.length} students • Periods ${Array.from(periods).join(', ') || 'n/a'} • Quarters ${Array.from(quarters).join(', ') || 'n/a'}`
-  }, [roster])
+  }, [roster, rosterLoading])
 
   async function handleGenerate() {
     if (!user) {
       setError('Sign in to access Gemini grouping.')
+      return
+    }
+    if (roster.length === 0) {
+      setError('Upload a roster first to unlock grouping suggestions.')
       return
     }
     setLoading(true)
@@ -88,6 +110,10 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
   }
 
   async function handleChip(chip: string) {
+    if (roster.length === 0) {
+      setError('Upload a roster first to unlock grouping suggestions.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -151,7 +177,11 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
             </div>
           ))}
         </div>
-        <button className="primary" onClick={handleGenerate} disabled={loading || roster.length === 0}>
+        <button
+          className="primary"
+          onClick={handleGenerate}
+          disabled={loading || roster.length === 0 || rosterLoading}
+        >
           {loading ? 'Generating groups…' : 'Generate instructional groups'}
         </button>
         {error && <div style={{ color: '#fecaca' }}>{error}</div>}
@@ -161,7 +191,11 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
         <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Recommended groups</h3>
         {groups.length === 0 ? (
           <div className="empty-state">
-            {roster.length === 0 ? 'Upload a roster first to unlock grouping suggestions.' : 'Run Gemini grouping to populate cohorts.'}
+            {roster.length === 0
+              ? rosterLoading
+                ? 'Loading roster…'
+                : 'Upload a roster first to unlock grouping suggestions.'
+              : 'Run Gemini grouping to populate cohorts.'}
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 18 }}>
@@ -176,7 +210,10 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
                 </header>
                 <ul style={{ marginTop: 16, listStyle: 'none', padding: 0, display: 'grid', gap: 8 }}>
                   {group.students.map((student) => (
-                    <li key={student.email} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <li
+                      key={student.id ?? student.name}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
                       <span>{student.name}</span>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                         {student.readiness || 'readiness n/a'}

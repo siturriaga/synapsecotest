@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { auth } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
+import { useRosterData } from '../hooks/useRosterData'
 
 interface RosterPageProps {
   user: User | null
@@ -10,30 +11,167 @@ interface RosterPageProps {
 type PreviewRow = {
   row: number
   status: 'ok' | 'needs_review'
-  data: { name: string | null; email: string | null; period: number | null; quarter: string | null }
+  data: {
+    displayName: string | null
+    nameVariants: string[]
+    period: number | null
+    quarter: string | null
+    score: number | null
+    testName: string | null
+  }
   issues?: string[]
+}
+
+type AssessmentSummary = {
+  count: number
+  average: number | null
+  median: number | null
+  min: number | null
+  max: number | null
 }
 
 type PreviewResponse = {
   rows: PreviewRow[]
   stats: { total: number; ok: number; needs_review: number }
+  assessmentSummary: AssessmentSummary
 }
 
 type CommitResponse = {
   written: number
   skipped: number
   collection: string
+  assessmentSummary: AssessmentSummary
+}
+
+type RowOverride = {
+  displayName?: string
+  period?: string
+  quarter?: string
+  score?: string
+  testName?: string
 }
 
 export default function RosterUploadPage({ user }: RosterPageProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [period, setPeriod] = useState('1')
-  const [quarter, setQuarter] = useState('Q1')
+  const [period, setPeriod] = useState('')
+  const [quarter, setQuarter] = useState('')
+  const [testName, setTestName] = useState('')
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [uploadId, setUploadId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [overrides, setOverrides] = useState<Record<number, RowOverride>>({})
+  const [overrideDirty, setOverrideDirty] = useState(false)
+  const {
+    loading: rosterLoading,
+    records,
+    summaries,
+    insights,
+    groupInsights,
+    pedagogy,
+    syncStatus,
+    syncError,
+    lastSyncedAt,
+    triggerSync
+  } = useRosterData()
+
+  const summary = useMemo(() => preview?.assessmentSummary, [preview])
+  const previewDetails = useMemo(() => {
+    if (!preview) {
+      return {
+        testName: testName.trim() || null,
+        period: period ? Number(period) : null,
+        quarter: quarter || null
+      }
+    }
+    const test = preview.rows.find((row) => row.data.testName)
+    const periodRow = preview.rows.find((row) => row.data.period !== null)
+    const quarterRow = preview.rows.find((row) => row.data.quarter)
+    return {
+      testName: (test?.data.testName || testName || '').trim() || null,
+      period: periodRow?.data.period ?? (period ? Number(period) : null),
+      quarter: quarterRow?.data.quarter ?? (quarter || null)
+    }
+  }, [preview, testName, period, quarter])
+
+  const autoSaveStatus = useMemo(() => {
+    if (syncStatus === 'saving') return 'Saving workspace snapshot…'
+    if (syncStatus === 'error') return syncError ?? 'Auto-save error'
+    if (lastSyncedAt) {
+      const deltaSeconds = Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000)
+      if (deltaSeconds < 60) return `Snapshot saved ${deltaSeconds}s ago`
+      const deltaMinutes = Math.floor(deltaSeconds / 60)
+      if (deltaMinutes < 60) return `Snapshot saved ${deltaMinutes}m ago`
+      const deltaHours = Math.floor(deltaMinutes / 60)
+      return `Snapshot saved ${deltaHours}h ago`
+    }
+    return 'Waiting for first snapshot…'
+  }, [syncStatus, syncError, lastSyncedAt])
+
+  const buildManualOverrides = useCallback(() => {
+    const payload: Record<number, any> = {}
+    Object.entries(overrides).forEach(([key, fields]) => {
+      const rowNumber = Number(key)
+      if (!Number.isFinite(rowNumber)) return
+      const entry: Record<string, any> = {}
+      if (Object.prototype.hasOwnProperty.call(fields, 'displayName')) {
+        const value = fields.displayName?.trim() ?? ''
+        entry.displayName = value ? value : null
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'period')) {
+        const trimmed = fields.period?.trim() ?? ''
+        if (!trimmed) {
+          entry.period = null
+        } else {
+          const numeric = Number(trimmed)
+          entry.period = Number.isFinite(numeric) ? numeric : null
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'quarter')) {
+        const trimmed = fields.quarter?.trim() ?? ''
+        entry.quarter = trimmed ? trimmed.toUpperCase() : null
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'score')) {
+        const trimmed = fields.score?.trim() ?? ''
+        if (!trimmed) {
+          entry.score = null
+        } else {
+          const numeric = Number(trimmed)
+          entry.score = Number.isFinite(numeric) ? numeric : null
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'testName')) {
+        const value = fields.testName?.trim() ?? ''
+        entry.testName = value ? value : null
+      }
+      if (Object.keys(entry).length > 0) {
+        payload[rowNumber] = entry
+      }
+    })
+    return payload
+  }, [overrides])
+
+  const updateOverride = useCallback((rowNumber: number, field: keyof RowOverride, value: string) => {
+    setOverrides((prev) => {
+      const nextRow = { ...(prev[rowNumber] ?? {}), [field]: value }
+      const next = { ...prev, [rowNumber]: nextRow }
+      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
+      setOverrideDirty(hasValues)
+      return next
+    })
+  }, [])
+
+  const resetOverride = useCallback((rowNumber: number) => {
+    setOverrides((prev) => {
+      if (!prev[rowNumber]) return prev
+      const next = { ...prev }
+      delete next[rowNumber]
+      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
+      setOverrideDirty(hasValues)
+      return next
+    })
+  }, [])
 
   async function uploadFile(mode: 'preview' | 'commit') {
     if (!user || !file) {
@@ -47,11 +185,11 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       setStatus(mode === 'preview' ? 'Uploading for preview…' : 'Applying roster to Firestore…')
 
       let id = uploadId
-      if (!id || mode === 'preview') {
+      if (!id) {
         const token = await auth.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
-        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}`, {
+        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: form
@@ -68,18 +206,29 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         '/.netlify/functions/processRoster',
         {
           method: 'POST',
-          body: JSON.stringify({ uploadId: id, mode })
+          body: JSON.stringify({ uploadId: id, mode, manualOverrides: buildManualOverrides() })
         }
       )
 
       if (mode === 'preview') {
         setPreview(response as PreviewResponse)
         setStatus('Preview ready — resolve any issues before committing.')
+        setOverrideDirty(false)
       } else {
         const commit = response as CommitResponse
-        setStatus(`Synced ${commit.written} students. Skipped ${commit.skipped}.`)
+        const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
+        setStatus(`Synced ${commit.written} learners. Skipped ${commit.skipped}.${averageText}`)
         setPreview(null)
         setUploadId(null)
+        setFile(null)
+        setTestName('')
+        setOverrides({})
+        setOverrideDirty(false)
+        try {
+          await triggerSync()
+        } catch (syncErr) {
+          console.error('Unable to force roster snapshot sync', syncErr)
+        }
       }
     } catch (err: any) {
       console.error(err)
@@ -104,9 +253,9 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload CSV, XLSX, PDF, or DOCX rosters</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and refine them in place</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Synapse validates email, period, and quarter fields before persisting to Firestore. Preview first to resolve flagged rows.
+          Drop in your export, edit names, periods, scores, or test titles directly in the table, then preview before saving.
         </p>
         <form
           onSubmit={(event) => {
@@ -121,8 +270,29 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               name="roster-file"
               type="file"
               accept=".csv,.xlsx,.xls,.pdf,.docx"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const nextFile = event.target.files?.[0] ?? null
+                setFile(nextFile)
+                setUploadId(null)
+                setPreview(null)
+                setOverrides({})
+                setOverrideDirty(false)
+                setStatus('')
+                setError(null)
+              }}
               required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="roster-test">
+              Name of the test or benchmark <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>(optional)</span>
+            </label>
+            <input
+              id="roster-test"
+              name="roster-test"
+              value={testName}
+              onChange={(event) => setTestName(event.target.value)}
+              placeholder="e.g., Q2 Expressions Mastery Check"
             />
           </div>
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
@@ -136,7 +306,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 max={8}
                 value={period}
                 onChange={(event) => setPeriod(event.target.value)}
-                required
+                placeholder="Optional"
               />
             </div>
             <div className="field">
@@ -146,8 +316,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 name="roster-quarter"
                 value={quarter}
                 onChange={(event) => setQuarter(event.target.value)}
-                required
               >
+                <option value="">—</option>
                 <option value="Q1">Q1</option>
                 <option value="Q2">Q2</option>
                 <option value="Q3">Q3</option>
@@ -157,7 +327,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
             <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Preview roster'}
+              {loading ? 'Processing…' : 'Preview mastery data'}
             </button>
             <button
               type="button"
@@ -171,46 +341,397 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         </form>
         {status && <p style={{ marginTop: 14, color: 'var(--text-muted)' }}>{status}</p>}
         {error && <p style={{ marginTop: 14, color: '#fecaca' }}>{error}</p>}
+        <div
+          style={{
+            marginTop: 20,
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(15,23,42,0.45)',
+            border: '1px solid rgba(148,163,184,0.25)',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}
+        >
+          <strong style={{ fontSize: 14, letterSpacing: 0.4 }}>Workspace auto-save</strong>
+          <span
+            style={{
+              color: syncStatus === 'error' ? '#fecaca' : 'var(--text-muted)',
+              fontSize: 14
+            }}
+          >
+            {autoSaveStatus}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginLeft: 'auto', padding: '6px 14px' }}
+            onClick={() => {
+              void triggerSync()
+            }}
+            disabled={syncStatus === 'saving'}
+          >
+            {syncStatus === 'saving' ? 'Saving…' : 'Sync now'}
+          </button>
+        </div>
       </section>
 
       {preview && (
-        <section className="glass-card">
-          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
-          <p style={{ color: 'var(--text-muted)' }}>
-            {preview.stats.ok} rows ready • {preview.stats.needs_review} need attention.
-          </p>
-          <table className="table" style={{ marginTop: 16 }}>
+        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
+              <p style={{ color: 'var(--text-muted)' }}>
+                {preview.stats.ok} learners ready • {preview.stats.needs_review} need attention.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
+              <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
+                <strong>Test details</strong>
+                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
+                  <span>Assessment: {previewDetails.testName ?? '—'}</span>
+                  <span>Period: {previewDetails.period ?? '—'} · Quarter: {previewDetails.quarter ?? '—'}</span>
+                </div>
+              </div>
+              {summary && (
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
+                  <strong>Assessment snapshot</strong>
+                  <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
+                    <span>Average: {summary.average !== null ? summary.average.toFixed(1) : '—'}</span>
+                    <span>Median: {summary.median !== null ? summary.median.toFixed(1) : '—'}</span>
+                    <span>High: {summary.max !== null ? summary.max.toFixed(1) : '—'} · Low: {summary.min !== null ? summary.min.toFixed(1) : '—'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <table className="table">
             <thead>
               <tr>
                 <th>Row</th>
-                <th>Name</th>
-                <th>Email</th>
+                <th>Student</th>
                 <th>Period</th>
                 <th>Quarter</th>
+                <th>Score</th>
+                <th>Assessment</th>
                 <th>Status</th>
+                <th>Manual</th>
               </tr>
             </thead>
             <tbody>
-              {preview.rows.map((row) => (
-                <tr key={row.row}>
-                  <td>{row.row}</td>
-                  <td>{row.data.name || '—'}</td>
-                  <td>{row.data.email || '—'}</td>
-                  <td>{row.data.period ?? '—'}</td>
-                  <td>{row.data.quarter ?? '—'}</td>
-                  <td>
-                    {row.status === 'ok' ? (
-                      <span className="status-success">Validated</span>
-                    ) : (
-                      <span className="status-warning">Check: {row.issues?.join(', ')}</span>
-                    )}
-                  </td>
+              {preview.rows.map((row) => {
+                const rowOverride = overrides[row.row] ?? {}
+                const hasOverride = !!rowOverride && Object.keys(rowOverride).length > 0
+                const studentValue = rowOverride.displayName ?? row.data.displayName ?? ''
+                const periodValue = rowOverride.period ?? (row.data.period !== null ? String(row.data.period) : '')
+                const quarterValue = rowOverride.quarter ?? (row.data.quarter ?? '')
+                const scoreValue = rowOverride.score ?? (row.data.score !== null ? String(row.data.score) : '')
+                const testValue = rowOverride.testName ?? row.data.testName ?? testName ?? ''
+                return (
+                  <tr key={row.row}>
+                    <td>{row.row}</td>
+                    <td>
+                      <input
+                        className="table-input"
+                        value={studentValue}
+                        onChange={(event) => updateOverride(row.row, 'displayName', event.target.value)}
+                        placeholder="Student name"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        min={1}
+                        max={8}
+                        value={periodValue}
+                        onChange={(event) => updateOverride(row.row, 'period', event.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        className="table-input"
+                        value={quarterValue}
+                        onChange={(event) => updateOverride(row.row, 'quarter', event.target.value)}
+                      >
+                        <option value="">—</option>
+                        <option value="Q1">Q1</option>
+                        <option value="Q2">Q2</option>
+                        <option value="Q3">Q3</option>
+                        <option value="Q4">Q4</option>
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        step="0.1"
+                        value={scoreValue}
+                        onChange={(event) => updateOverride(row.row, 'score', event.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        value={testValue}
+                        onChange={(event) => updateOverride(row.row, 'testName', event.target.value)}
+                        placeholder="Assessment name"
+                      />
+                    </td>
+                    <td>
+                      {row.status === 'ok' ? (
+                        <span className="status-success">Validated</span>
+                      ) : (
+                        <span className="status-warning">Check: {row.issues?.join(', ')}</span>
+                      )}
+                    </td>
+                    <td>
+                      {hasOverride ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => resetOverride(row.row)}
+                        >
+                          Reset
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {overrideDirty && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: '1px solid rgba(251,191,36,0.45)',
+                background: 'rgba(251,191,36,0.12)',
+                color: '#facc15',
+                fontSize: 13
+              }}
+            >
+              Manual edits pending — run Preview again to validate before committing.
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="badge">Class statistics</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Saved assessment summaries</h3>
+          </div>
+          <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
+            Print
+          </button>
+        </header>
+        {insights && (
+          <div
+            className="glass-subcard"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 18,
+              padding: 16,
+              borderRadius: 16,
+              border: '1px solid rgba(99,102,241,0.25)',
+              background: 'rgba(15,23,42,0.45)'
+            }}
+          >
+            <div style={{ minWidth: 180 }}>
+              <strong>Total learners</strong>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{insights.totalStudents || '—'}</div>
+            </div>
+            <div style={{ minWidth: 180 }}>
+              <strong>Class average</strong>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>
+                {insights.averageScore !== null ? insights.averageScore.toFixed(1) : '—'}
+              </div>
+            </div>
+            {insights.highest && (
+              <div style={{ minWidth: 220 }}>
+                <strong>Top performer</strong>
+                <div style={{ fontSize: 15, marginTop: 6 }}>
+                  {insights.highest.name} · {insights.highest.score ?? '—'}
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    {insights.highest.testName ?? 'Assessment'}
+                  </div>
+                </div>
+              </div>
+            )}
+            {insights.lowest && (
+              <div style={{ minWidth: 220 }}>
+                <strong>Needs support</strong>
+                <div style={{ fontSize: 15, marginTop: 6 }}>
+                  {insights.lowest.name} · {insights.lowest.score ?? '—'}
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    {insights.lowest.testName ?? 'Assessment'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {(groupInsights.length > 0 || pedagogy) && (
+          <div
+            className="glass-subcard"
+            style={{
+              display: 'grid',
+              gap: 18,
+              padding: 18,
+              borderRadius: 16,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: 'rgba(15,23,42,0.45)'
+            }}
+          >
+            {pedagogy && (
+              <div>
+                <strong style={{ display: 'block', marginBottom: 8 }}>Pedagogical commitments</strong>
+                <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>{pedagogy.summary}</p>
+                <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)', fontSize: 14, display: 'grid', gap: 6 }}>
+                  {pedagogy.bestPractices.map((practice, index) => (
+                    <li key={index}>{practice}</li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 12 }}>
+                  <summary style={{ cursor: 'pointer', color: '#cbd5f5' }}>Reflection prompts</summary>
+                  <ul style={{ margin: '10px 0 0 18px', color: 'var(--text-muted)', fontSize: 14, display: 'grid', gap: 6 }}>
+                    {pedagogy.reflectionPrompts.map((prompt, index) => (
+                      <li key={index}>{prompt}</li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            )}
+            {groupInsights.length > 0 && (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <strong>Suggested learning groups</strong>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {groupInsights.map((group) => (
+                    <div
+                      key={group.id}
+                      style={{
+                        border: '1px solid rgba(99,102,241,0.25)',
+                        borderRadius: 14,
+                        padding: 14,
+                        background: 'rgba(15,23,42,0.55)',
+                        display: 'grid',
+                        gap: 8
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{group.label}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                          {group.range} • {group.studentCount} {group.studentCount === 1 ? 'learner' : 'learners'}
+                        </span>
+                      </div>
+                      {group.students.length > 0 && (
+                        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 14 }}>
+                          Learners: {group.students.map((student) => student.name).join(', ')}
+                        </p>
+                      )}
+                      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, color: 'var(--text-muted)', fontSize: 14 }}>
+                        {group.recommendedPractices.map((practice, index) => (
+                          <li key={index}>{practice}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {rosterLoading ? (
+          <div style={{ color: 'var(--text-muted)' }}>Loading saved summaries…</div>
+        ) : summaries.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Upload mastery files to generate class-level averages and ranges. Summaries feed the dashboard and AI planning tools.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Assessment</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Average</th>
+                <th>High</th>
+                <th>Low</th>
+                <th>Learners</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((record) => (
+                <tr key={record.id}>
+                  <td>{record.testName}</td>
+                  <td>{record.period ?? '—'}</td>
+                  <td>{record.quarter ?? '—'}</td>
+                  <td>{record.averageScore !== null ? record.averageScore.toFixed(1) : '—'}</td>
+                  <td>{record.maxScore ?? '—'}</td>
+                  <td>{record.minScore ?? '—'}</td>
+                  <td>{record.studentCount ?? '—'}</td>
+                  <td>{record.updatedAt ? record.updatedAt.toLocaleString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      </section>
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="badge">Individual records</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Latest mastery uploads</h3>
+          </div>
+          <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
+            Print
+          </button>
+        </header>
+        {records.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Once you commit a roster, the secure roster library shows each learner’s score, period, and test name here for quick reference and AI planning.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Score</th>
+                <th>Assessment</th>
+                <th>Period</th>
+                <th>Quarter</th>
+                <th>Source row</th>
+                <th>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((record) => (
+                <tr key={record.id}>
+                  <td>{record.displayName}</td>
+                  <td>{record.score !== null ? record.score : '—'}</td>
+                  <td>{record.testName ?? '—'}</td>
+                  <td>{record.period ?? '—'}</td>
+                  <td>{record.quarter ?? '—'}</td>
+                  <td>{record.sheetRow ?? '—'}</td>
+                  <td>{record.createdAt ? record.createdAt.toLocaleString() : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   )
 }

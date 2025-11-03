@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { db } from '../firebase'
 import { DynamicWelcome } from '../components/core/DynamicWelcome'
 import { DashboardCards, type StatCard } from '../components/core/DashboardCards'
+import { useRosterData } from '../hooks/useRosterData'
 
 interface DashboardProps {
   user: User | null
@@ -24,28 +25,201 @@ type AssignmentSummary = {
   status: string
 }
 
+type LatestAssessment = {
+  testName: string
+  period?: number | null
+  quarter?: string | null
+  studentCount?: number
+  averageScore?: number | null
+  maxScore?: number | null
+  minScore?: number | null
+}
+
+type AssessmentSnapshot = {
+  id: string
+  testName: string
+  period?: number | null
+  quarter?: string | null
+  studentCount?: number
+  averageScore?: number | null
+  maxScore?: number | null
+  minScore?: number | null
+  updatedAt?: Date | null
+}
+
 export default function DashboardPage({ user, loading }: DashboardProps) {
   const [stats, setStats] = useState<StatCard[]>([])
   const [pulses, setPulses] = useState<Pulse[]>([])
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([])
+  const [latestAssessment, setLatestAssessment] = useState<LatestAssessment | null>(null)
+  const [assessmentSummaries, setAssessmentSummaries] = useState<AssessmentSnapshot[]>([])
+  const {
+    records: rosterRecords,
+    summaries: rosterSummaries,
+    students: rosterStudents,
+    insights: rosterInsights,
+    groupInsights,
+    pedagogy
+  } = useRosterData()
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('all')
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('')
+
+  useEffect(() => {
+    if (!selectedStudentId && rosterStudents.length) {
+      setSelectedStudentId(rosterStudents[0].id)
+    }
+  }, [rosterStudents, selectedStudentId])
+
+  useEffect(() => {
+    if (selectedStudentId && rosterStudents.every((student) => student.id !== selectedStudentId)) {
+      setSelectedStudentId(rosterStudents[0]?.id ?? '')
+    }
+  }, [rosterStudents, selectedStudentId])
+
+  const periodOptions = useMemo(() => {
+    const set = new Set<string>()
+    rosterRecords.forEach((record) => {
+      if (record.period !== null && record.period !== undefined) {
+        set.add(String(record.period))
+      }
+    })
+    return Array.from(set).sort((a, b) => Number(a) - Number(b))
+  }, [rosterRecords])
+
+  useEffect(() => {
+    if (selectedPeriod !== 'all' && !periodOptions.includes(selectedPeriod)) {
+      setSelectedPeriod(periodOptions[0] ?? 'all')
+    }
+  }, [periodOptions, selectedPeriod])
+
+  const combinedSummaries = assessmentSummaries.length ? assessmentSummaries : rosterSummaries
+
+  const derivedLatestAssessment = useMemo(() => {
+    if (latestAssessment) return latestAssessment
+    const first = combinedSummaries[0]
+    if (!first) return null
+    return {
+      testName: first.testName,
+      period: first.period,
+      quarter: first.quarter,
+      studentCount: first.studentCount ?? undefined,
+      averageScore: first.averageScore,
+      maxScore: first.maxScore,
+      minScore: first.minScore
+    } as LatestAssessment
+  }, [latestAssessment, combinedSummaries])
+
+  const filteredClassRecords = useMemo(() => {
+    if (selectedPeriod === 'all') return rosterRecords
+    return rosterRecords.filter((record) => String(record.period ?? '') === selectedPeriod)
+  }, [rosterRecords, selectedPeriod])
+
+  const classMetrics = useMemo(() => {
+    if (!filteredClassRecords.length) return null
+    const scoredRecords = filteredClassRecords.filter((record) => typeof record.score === 'number') as Array<
+      typeof filteredClassRecords[number] & { score: number }
+    >
+    const assessments = Array.from(
+      new Set(filteredClassRecords.map((record) => record.testName).filter((value): value is string => Boolean(value)))
+    )
+    if (!scoredRecords.length) {
+      return {
+        average: null,
+        topRecord: null,
+        bottomRecord: null,
+        total: filteredClassRecords.length,
+        assessments
+      }
+    }
+    const scores = scoredRecords.map((record) => record.score)
+    const average = scores.length ? scores.reduce((total, value) => total + value, 0) / scores.length : null
+    const topRecord = scoredRecords.reduce<typeof scoredRecords[number] | null>((best, current) => {
+      if (!best) return current
+      return current.score > (best.score ?? -Infinity) ? current : best
+    }, null)
+    const bottomRecord = scoredRecords.reduce<typeof scoredRecords[number] | null>((lowest, current) => {
+      if (!lowest) return current
+      return current.score < (lowest.score ?? Infinity) ? current : lowest
+    }, null)
+    return {
+      average,
+      topRecord,
+      bottomRecord,
+      total: filteredClassRecords.length,
+      assessments
+    }
+  }, [filteredClassRecords])
+
+  const selectedStudent = useMemo(() => {
+    if (!rosterStudents.length) return null
+    return rosterStudents.find((entry) => entry.id === selectedStudentId) ?? rosterStudents[0]
+  }, [rosterStudents, selectedStudentId])
+
+  const studentHistory = useMemo(() => {
+    if (!selectedStudent) return []
+    return rosterRecords.filter(
+      (record) =>
+        record.studentId === selectedStudent.id ||
+        (!record.studentId && record.displayName === selectedStudent.displayName)
+    )
+  }, [rosterRecords, selectedStudent])
+
+  const studentMetrics = useMemo(() => {
+    if (!selectedStudent) return null
+    const scored = studentHistory.filter((record) => typeof record.score === 'number') as Array<
+      typeof studentHistory[number] & { score: number }
+    >
+    const average = scored.length ? scored.reduce((total, item) => total + item.score, 0) / scored.length : null
+    const latest = studentHistory[0] ?? null
+    const recent = studentHistory.slice(0, 3)
+    return { average, latest, recent }
+  }, [studentHistory, selectedStudent])
 
   useEffect(() => {
     if (!user) {
       setStats([])
       setPulses([])
       setAssignments([])
+      setAssessmentSummaries([])
+      setLatestAssessment(null)
       return
     }
 
     const statsRef = doc(db, `users/${user.uid}/dashboard_stats/metrics`)
     const unsubStats = onSnapshot(statsRef, (snap) => {
       const data = snap.data() || {}
-      const cards: StatCard[] = [
-        { id: 'enrollment', label: 'Total Enrollment', value: data.totalEnrollment ?? 0 },
-        { id: 'groups', label: 'Active Groups', value: data.groupCount ?? 0, delta: data.groupDelta ?? undefined },
-        { id: 'on-track', label: 'On Track', value: data.onTrack ?? 0, delta: data.onTrackDelta ?? undefined },
-        { id: 'at-risk', label: 'Needs Support', value: data.atRisk ?? 0, delta: data.atRiskDelta ?? undefined }
-      ]
+      const cards: StatCard[] = []
+      if (typeof data.totalEnrollment === 'number') {
+        cards.push({ id: 'enrollment', label: 'Learners scored', value: data.totalEnrollment })
+      }
+      if (data.latestAssessment) {
+        const summary = data.latestAssessment as LatestAssessment
+        setLatestAssessment(summary)
+        const average = summary.averageScore ?? null
+        cards.push({
+          id: 'latest-average',
+          label: 'Latest class average',
+          value: average ?? 0,
+          displayValue: average !== null ? average.toFixed(1) : '—'
+        })
+        if (typeof summary.studentCount === 'number') {
+          cards.push({ id: 'latest-count', label: 'Students assessed', value: summary.studentCount })
+        }
+      } else {
+        setLatestAssessment(null)
+      }
+      if (typeof data.groupCount === 'number') {
+        cards.push({ id: 'groups', label: 'Active Groups', value: data.groupCount ?? 0, delta: data.groupDelta ?? undefined })
+      }
+      if (typeof data.onTrack === 'number') {
+        cards.push({ id: 'on-track', label: 'On Track', value: data.onTrack ?? 0, delta: data.onTrackDelta ?? undefined })
+      }
+      if (typeof data.atRisk === 'number') {
+        cards.push({ id: 'at-risk', label: 'Needs Support', value: data.atRisk ?? 0, delta: data.atRiskDelta ?? undefined })
+      }
+      if (cards.length === 0) {
+        cards.push({ id: 'placeholder', label: 'Data incoming', value: 0, displayValue: '—' })
+      }
       setStats(cards)
     })
 
@@ -79,10 +253,31 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       setAssignments(rows.slice(0, 4))
     })
 
+    const summaryQuery = query(collection(db, `users/${user.uid}/assessments_summary`), orderBy('updatedAt', 'desc'))
+    const unsubSummary = onSnapshot(summaryQuery, (snap) => {
+      const rows: AssessmentSnapshot[] = []
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any
+        rows.push({
+          id: docSnap.id,
+          testName: data.testName ?? 'Assessment',
+          period: data.period,
+          quarter: data.quarter,
+          studentCount: data.studentCount,
+          averageScore: data.averageScore,
+          maxScore: data.maxScore,
+          minScore: data.minScore,
+          updatedAt: data.updatedAt?.toDate?.() ?? null
+        })
+      })
+      setAssessmentSummaries(rows.slice(0, 3))
+    })
+
     return () => {
       unsubStats()
       unsubPulses()
       unsubAssignments()
+      unsubSummary()
     }
   }, [user])
 
@@ -106,6 +301,266 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       <DynamicWelcome />
       <section style={{ display: 'grid', gap: 28 }}>
         <DashboardCards cards={stats} />
+
+        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+          <div className="badge">Class & student explorer</div>
+          <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+            <div
+              className="glass-subcard"
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                border: '1px solid rgba(148,163,184,0.25)',
+                background: 'rgba(15,23,42,0.55)',
+                display: 'grid',
+                gap: 12
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <strong>Class view</strong>
+                <select
+                  value={selectedPeriod}
+                  onChange={(event) => setSelectedPeriod(event.target.value)}
+                  className="table-input"
+                  style={{ maxWidth: 160 }}
+                >
+                  <option value="all">All periods</option>
+                  {periodOptions.map((option) => (
+                    <option key={option} value={option}>
+                      Period {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {classMetrics ? (
+                <div style={{ display: 'grid', gap: 10, fontSize: 14 }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Students</span>
+                    <div style={{ fontSize: 24, fontWeight: 700 }}>{classMetrics.total}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Average</span>
+                    <div style={{ fontSize: 22, fontWeight: 700 }}>
+                      {classMetrics.average !== null ? classMetrics.average.toFixed(1) : '—'}
+                    </div>
+                  </div>
+                  {classMetrics.topRecord && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Top performer</span>
+                      <div style={{ marginTop: 4 }}>
+                        {classMetrics.topRecord.displayName} · {classMetrics.topRecord.score ?? '—'}
+                      </div>
+                    </div>
+                  )}
+                  {classMetrics.bottomRecord && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Needs support</span>
+                      <div style={{ marginTop: 4 }}>
+                        {classMetrics.bottomRecord.displayName} · {classMetrics.bottomRecord.score ?? '—'}
+                      </div>
+                    </div>
+                  )}
+                  {classMetrics.assessments.length > 0 && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Assessments</span>
+                      <div style={{ marginTop: 4 }}>{classMetrics.assessments.join(', ')}</div>
+                    </div>
+                  )}
+                  {groupInsights.length > 0 && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Groups</span>
+                      <ul
+                        style={{
+                          margin: '6px 0 0 16px',
+                          padding: 0,
+                          display: 'grid',
+                          gap: 4,
+                          color: 'var(--text-muted)',
+                          listStyle: 'disc'
+                        }}
+                      >
+                        {groupInsights.slice(0, 3).map((group) => (
+                          <li key={group.id}>
+                            {group.label}: {group.range}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {pedagogy?.summary && (
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>{pedagogy.summary}</p>
+                  )}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: '4px 0 0' }}>
+                  Upload roster data to populate class metrics.
+                </p>
+              )}
+            </div>
+
+            <div
+              className="glass-subcard"
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                border: '1px solid rgba(148,163,184,0.25)',
+                background: 'rgba(15,23,42,0.55)',
+                display: 'grid',
+                gap: 12
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <strong>Student focus</strong>
+                <select
+                  value={selectedStudentId}
+                  onChange={(event) => setSelectedStudentId(event.target.value)}
+                  className="table-input"
+                  style={{ maxWidth: 200 }}
+                >
+                  {rosterStudents.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedStudent ? (
+                <div style={{ display: 'grid', gap: 10, fontSize: 14 }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Latest score</span>
+                    <div style={{ marginTop: 4 }}>
+                      {selectedStudent.lastScore !== null && selectedStudent.lastScore !== undefined
+                        ? selectedStudent.lastScore
+                        : '—'}
+                      {selectedStudent.lastAssessment && ` · ${selectedStudent.lastAssessment}`}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Average</span>
+                    <div style={{ marginTop: 4 }}>
+                      {studentMetrics?.average !== null && studentMetrics?.average !== undefined
+                        ? studentMetrics.average.toFixed(1)
+                        : '—'}
+                    </div>
+                  </div>
+                  {selectedStudent.periodHistory && selectedStudent.periodHistory.length > 0 && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Period history</span>
+                      <div style={{ marginTop: 4 }}>
+                        {Array.from(
+                          new Set(
+                            selectedStudent.periodHistory.filter(
+                              (value): value is number => value !== null && value !== undefined
+                            )
+                          )
+                        ).join(', ')}
+                      </div>
+                    </div>
+                  )}
+                  {studentMetrics?.recent.length ? (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Recent mastery</span>
+                      <ul
+                        style={{
+                          margin: '6px 0 0 16px',
+                          padding: 0,
+                          display: 'grid',
+                          gap: 4,
+                          color: 'var(--text-muted)',
+                          listStyle: 'disc'
+                        }}
+                      >
+                        {studentMetrics.recent.map((entry) => (
+                          <li key={entry.id}>
+                            {entry.testName ?? 'Assessment'} · {entry.score ?? '—'}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: '4px 0 0' }}>
+                  Upload roster data to view individual trends.
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {derivedLatestAssessment && (
+          <section className="glass-card">
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="badge">Latest mastery upload</div>
+                <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>{derivedLatestAssessment.testName}</h3>
+              </div>
+              {derivedLatestAssessment.period && derivedLatestAssessment.quarter && (
+                <span className="tag">Period {derivedLatestAssessment.period} · {derivedLatestAssessment.quarter}</span>
+              )}
+            </header>
+            <div style={{ display: 'grid', gap: 12, marginTop: 18 }}>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                  <strong>Average</strong>
+                  <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                    {derivedLatestAssessment.averageScore !== null && derivedLatestAssessment.averageScore !== undefined
+                      ? derivedLatestAssessment.averageScore.toFixed(1)
+                      : '—'}
+                  </div>
+                </div>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                  <strong>Range</strong>
+                  <div style={{ marginTop: 6 }}>
+                    High {derivedLatestAssessment.maxScore ?? '—'} · Low {derivedLatestAssessment.minScore ?? '—'}
+                  </div>
+                </div>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                  <strong>Learners</strong>
+                  <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{derivedLatestAssessment.studentCount ?? '—'}</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {combinedSummaries.length > 0 && (
+          <section className="glass-card">
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="badge">Assessment history</div>
+                <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Recent uploads</h3>
+              </div>
+              <a href="/assignments" style={{ color: 'var(--accent)', fontWeight: 600 }}>Design follow-ups →</a>
+            </header>
+            <table className="table" style={{ marginTop: 18 }}>
+              <thead>
+                <tr>
+                  <th>Assessment</th>
+                  <th>Period</th>
+                  <th>Quarter</th>
+                  <th>Avg</th>
+                  <th>High</th>
+                  <th>Low</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combinedSummaries.map((snapshot) => (
+                  <tr key={snapshot.id}>
+                    <td>{snapshot.testName}</td>
+                    <td>{snapshot.period ?? '—'}</td>
+                    <td>{snapshot.quarter ?? '—'}</td>
+                    <td>{snapshot.averageScore !== null && snapshot.averageScore !== undefined ? snapshot.averageScore.toFixed(1) : '—'}</td>
+                    <td>{snapshot.maxScore ?? '—'}</td>
+                    <td>{snapshot.minScore ?? '—'}</td>
+                    <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <section className="glass-card">
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
