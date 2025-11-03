@@ -59,6 +59,21 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const gradeOptions = useMemo(() => {
+    if (!subjects.length) {
+      return [] as string[]
+    }
+    if (subjectId) {
+      const subject = subjects.find((entry) => entry.id === subjectId)
+      return Object.keys(subject?.grades ?? {}).sort((a, b) => Number(a) - Number(b))
+    }
+    const allGrades = new Set<string>()
+    subjects.forEach((subject) => {
+      Object.keys(subject.grades ?? {}).forEach((grade) => allGrades.add(grade))
+    })
+    return Array.from(allGrades).sort((a, b) => Number(a) - Number(b))
+  }, [subjectId, subjects])
+
   useEffect(() => {
     if (!subjectId || !gradeLevel) {
       setAvailableStandards([])
@@ -66,7 +81,13 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
       return
     }
     const subject = subjects.find((entry) => entry.id === subjectId)
-    const standards = subject?.grades?.[gradeLevel]?.standards ?? []
+    if (!subject?.grades?.[gradeLevel]) {
+      setAvailableStandards([])
+      setSelected(null)
+      setGradeLevel('')
+      return
+    }
+    const standards = subject.grades[gradeLevel]?.standards ?? []
     setAvailableStandards(standards)
     setSelected((current) => (standards.some((standard) => standard.code === current?.code) ? current : null))
   }, [subjectId, gradeLevel, subjects])
@@ -145,10 +166,10 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
               name="standards-grade"
               value={gradeLevel}
               onChange={(event) => setGradeLevel(event.target.value)}
-              disabled={!subjectId}
+              disabled={!subjectId || gradeOptions.length === 0}
             >
-              <option value="">Select grade 6, 7, or 8</option>
-              {['6', '7', '8'].map((grade) => (
+              <option value="">{subjectId ? 'Select a grade level' : 'Select a subject first'}</option>
+              {gradeOptions.map((grade) => (
                 <option key={grade} value={grade}>
                   Grade {grade}
                 </option>

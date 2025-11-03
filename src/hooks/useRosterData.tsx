@@ -17,6 +17,7 @@ import type {
   RosterGroupInsight,
   RosterInsightEntry,
   SavedAssessment,
+  SavedRosterUpload,
   StudentRosterRecord
 } from '../types/roster'
 
@@ -25,6 +26,7 @@ interface RosterDataContextValue {
   records: SavedAssessment[]
   summaries: AssessmentSnapshotRecord[]
   students: StudentRosterRecord[]
+  uploads: SavedRosterUpload[]
   insights: RosterInsights | null
   groupInsights: RosterGroupInsight[]
   pedagogy: PedagogicalGuidance | null
@@ -182,6 +184,7 @@ const RosterDataContext = createContext<RosterDataContextValue>({
   records: [],
   summaries: [],
   students: [],
+  uploads: [],
   insights: null,
   groupInsights: [],
   pedagogy: null,
@@ -195,6 +198,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const [records, setRecords] = useState<SavedAssessment[]>([])
   const [summaries, setSummaries] = useState<AssessmentSnapshotRecord[]>([])
   const [students, setStudents] = useState<StudentRosterRecord[]>([])
+  const [uploads, setUploads] = useState<SavedRosterUpload[]>([])
   const [loading, setLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -204,6 +208,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     records: SavedAssessment[]
     summaries: AssessmentSnapshotRecord[]
     students: StudentRosterRecord[]
+    uploads: SavedRosterUpload[]
     groupInsights: RosterGroupInsight[]
     pedagogy: PedagogicalGuidance | null
   } | null>(null)
@@ -215,6 +220,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       setRecords([])
       setSummaries([])
       setStudents([])
+      setUploads([])
       setLoading(false)
       payloadRef.current = null
       hasPendingSync.current = false
@@ -228,9 +234,10 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     let recordsLoaded = false
     let summariesLoaded = false
     let studentsLoaded = false
+    let uploadsLoaded = false
 
     const done = () => {
-      if (recordsLoaded && summariesLoaded && studentsLoaded) {
+      if (recordsLoaded && summariesLoaded && studentsLoaded && uploadsLoaded) {
         setLoading(false)
       }
     }
@@ -327,10 +334,56 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       done()
     })
 
+    const uploadsQuery = query(
+      collection(db, `users/${user.uid}/uploads`),
+      orderBy('createdAt', 'desc'),
+      limit(12)
+    )
+    const unsubscribeUploads = onSnapshot(uploadsQuery, (snapshot) => {
+      const rows: SavedRosterUpload[] = []
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as any
+        const storageRaw = data.storage ?? {}
+        let storage: SavedRosterUpload['storage']
+        if (storageRaw?.kind === 'bucket' && typeof storageRaw.objectPath === 'string') {
+          storage = { kind: 'bucket', objectPath: storageRaw.objectPath }
+        } else {
+          const inlineSource =
+            typeof storageRaw?.data === 'string'
+              ? storageRaw.data
+              : typeof data.inlineData === 'string'
+              ? data.inlineData
+              : ''
+          storage = { kind: 'inline', data: inlineSource }
+        }
+        rows.push({
+          id: docSnap.id,
+          filename: data.filename ?? 'Roster upload',
+          period: data.period ?? null,
+          quarter: data.quarter ?? null,
+          testName: data.testName ?? null,
+          createdAt: data.createdAt?.toDate?.() ?? null,
+          size: typeof data.size === 'number' ? data.size : null,
+          storage,
+          storageWarning: data.storageWarning ?? null,
+          inlineData:
+            typeof data.inlineData === 'string'
+              ? data.inlineData
+              : typeof storageRaw?.data === 'string'
+              ? storageRaw.data
+              : null
+        })
+      })
+      setUploads(rows)
+      uploadsLoaded = true
+      done()
+    })
+
     return () => {
       unsubscribeAssessments()
       unsubscribeSummaries()
       unsubscribeStudents()
+      unsubscribeUploads()
     }
   }, [user])
 
@@ -339,11 +392,11 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const pedagogicalGuidance = groupResult.pedagogy
 
   useEffect(() => {
-    payloadRef.current = { records, summaries, students, groupInsights, pedagogy: pedagogicalGuidance }
+    payloadRef.current = { records, summaries, students, uploads, groupInsights, pedagogy: pedagogicalGuidance }
     if (user) {
       hasPendingSync.current = true
     }
-  }, [records, summaries, students, groupInsights, pedagogicalGuidance, user])
+  }, [records, summaries, students, uploads, groupInsights, pedagogicalGuidance, user])
 
   const computeInsights = useMemo<RosterInsights | null>(() => {
     if (!records.length && !summaries.length) return null
@@ -500,6 +553,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       records,
       summaries,
       students,
+      uploads,
       insights: computeInsights,
       groupInsights,
       pedagogy: pedagogicalGuidance,
@@ -515,6 +569,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       records,
       summaries,
       students,
+      uploads,
       computeInsights,
       groupInsights,
       pedagogicalGuidance,

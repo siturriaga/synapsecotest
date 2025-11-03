@@ -1,5 +1,6 @@
 import { Link, useRoute } from 'wouter'
 import type { User } from 'firebase/auth'
+import { usePreferences } from '../../hooks/usePreferences'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: '📊' },
@@ -11,6 +12,7 @@ const navItems = [
 ]
 
 export function Sidebar({ user, onSignIn, onSignOut }: { user: User | null; onSignIn: () => void; onSignOut: () => void }) {
+  const { displayName } = usePreferences()
   return (
     <aside className="sidebar" style={{
       position: 'sticky',
@@ -25,7 +27,7 @@ export function Sidebar({ user, onSignIn, onSignOut }: { user: User | null; onSi
       background: 'linear-gradient(160deg, rgba(15, 23, 42, 0.82), rgba(17, 24, 39, 0.95))'
     }}>
       <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>⚡</span>
+        <span className="sidebar__logo">⚡</span>
         SYNAPSE
       </div>
       <nav style={{ display: 'grid', gap: 8 }}>
@@ -37,7 +39,8 @@ export function Sidebar({ user, onSignIn, onSignOut }: { user: User | null; onSi
         <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
           {user ? (
             <>
-              <div style={{ fontWeight: 600, color: 'var(--text)' }}>{user.displayName || user.email}</div>
+              <div style={{ fontWeight: 600, color: 'var(--text)' }}>{displayName}</div>
+              <div style={{ opacity: 0.8 }}>{user.email}</div>
               <div style={{ opacity: 0.8 }}>Secured via Google Sign-In</div>
             </>
           ) : (
@@ -62,23 +65,9 @@ export function Sidebar({ user, onSignIn, onSignOut }: { user: User | null; onSi
 function SidebarLink({ href, label, icon }: { href: string; label: string; icon: string }) {
   const [isActive] = useRoute(href === '/' ? '/' : href)
   return (
-    <Link href={href}>
-      <a
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '12px 14px',
-          borderRadius: '14px',
-          background: isActive ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
-          color: isActive ? 'white' : 'rgba(226, 232, 240, 0.86)',
-          border: isActive ? '1px solid rgba(99, 102, 241, 0.45)' : '1px solid transparent',
-          transition: 'background 180ms ease, transform 180ms ease, border 180ms ease'
-        }}
-      >
-        <span style={{ fontSize: 18 }}>{icon}</span>
-        <span style={{ fontWeight: 600 }}>{label}</span>
-      </a>
+    <Link href={href} className="sidebar-link" data-active={isActive ? 'true' : undefined}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <span style={{ fontWeight: 600 }}>{label}</span>
     </Link>
   )
 }

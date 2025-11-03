@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { usePreferences } from '../../hooks/usePreferences'
 
 type Scene = {
   id: 'sunrise' | 'day' | 'sunset' | 'night'
@@ -59,6 +60,7 @@ function getClockRotation(date: Date) {
 
 export function DynamicWelcome() {
   const [now, setNow] = useState(() => new Date())
+  const { displayName } = usePreferences()
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -97,7 +99,10 @@ export function DynamicWelcome() {
       </div>
       <div>
         <div className="badge">Dynamic welcome</div>
-        <h1 style={{ fontSize: 34, margin: '12px 0 6px', fontWeight: 800 }}>{scene.greeting}, educator.</h1>
+        <h1 style={{ fontSize: 34, margin: '12px 0 6px', fontWeight: 800 }}>
+          {scene.greeting}
+          {displayName ? `, ${displayName}` : ', educator'}.
+        </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: 16, maxWidth: 520 }}>{scene.caption}</p>
         <div style={{ display: 'flex', gap: 14, marginTop: 16, alignItems: 'center', color: 'rgba(226,232,240,0.8)' }}>
           <span style={{ fontSize: 18, fontWeight: 700 }}>{timeString}</span>
