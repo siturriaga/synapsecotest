@@ -11,5 +11,5 @@
     "jsx": "react-jsx",
     "baseUrl": "."
   },
-  "include": ["src", "netlify/functions", "data"]
+  "include": ["src", "netlify/functions", "data", "types"]
 }
