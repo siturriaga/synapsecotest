@@ -66,9 +66,6 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     return (
       <div className="glass-card fade-in">
         <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Authenticate to personalize Synapse</h2>
-        <p style={{ color: 'var(--text-muted)' }}>
-          Settings persist across devices using Firestore within your workspace scope.
-        </p>
       </div>
     )
   }
@@ -77,7 +74,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Workspace preferences</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Control appearance and notifications</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Workspace settings</h2>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="pref-timezone">Timezone</label>
