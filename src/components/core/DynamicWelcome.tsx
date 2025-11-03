@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { usePreferences } from '../../hooks/usePreferences'
 
 type Scene = {
@@ -9,6 +9,8 @@ type Scene = {
   icon: string
   iconColor: string
 }
+
+type OrbStyle = CSSProperties & { '--welcome-rotation': string }
 
 const scenes: Scene[] = [
   {
@@ -75,6 +77,10 @@ export function DynamicWelcome() {
     const secondFraction = now.getSeconds() / 60
     return base + Math.sin(secondFraction * 2 * Math.PI) * 6
   }, [now])
+  const orbStyle = useMemo<OrbStyle>(
+    () => ({ '--welcome-rotation': `${rotation}deg` }),
+    [rotation]
+  )
   const timeString = useMemo(
     () => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now),
     [now]
@@ -89,7 +95,7 @@ export function DynamicWelcome() {
       className={`glass-card dynamic-welcome ${scene.id}`}
       style={{ marginBottom: 28, backgroundImage: scene.gradient }}
     >
-      <div className={`welcome-orb ${scene.id}`} aria-hidden style={{ ['--welcome-rotation' as const]: `${rotation}deg` }}>
+      <div className={`welcome-orb ${scene.id}`} aria-hidden style={orbStyle}>
         <div className="welcome-orb__glow" />
         <div className="welcome-orb__core" />
         <div className="welcome-orb__trail" />
