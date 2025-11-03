@@ -244,15 +244,19 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       const rows: SavedAssessment[] = []
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as any
+        const rawScore = data.score
+        let normalizedScore: number | null = null
+        if (typeof rawScore === 'number') {
+          normalizedScore = Number.isFinite(rawScore) ? rawScore : null
+        } else if (rawScore != null) {
+          const parsed = Number.parseFloat(String(rawScore).trim())
+          normalizedScore = Number.isFinite(parsed) ? parsed : null
+        }
+
         rows.push({
           id: docSnap.id,
           displayName: data.displayName ?? 'Student',
-          score:
-            typeof data.score === 'number'
-              ? data.score
-              : data.score
-              ? Number(data.score)
-              : null,
+          score: normalizedScore,
           period: data.period ?? null,
           quarter: data.quarter ?? null,
           testName: data.testName ?? null,
