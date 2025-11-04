@@ -90,7 +90,13 @@ export function DynamicWelcome() {
   return (
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
-      style={{ marginBottom: 28, backgroundImage: scene.gradient }}
+      style={{
+        marginBottom: 28,
+        backgroundImage: scene.gradient,
+        position: 'sticky',
+        top: 32,
+        zIndex: 5
+      }}
     >
       <div className={`welcome-orb ${scene.id}`} aria-hidden style={orbStyle}>
         <div className="welcome-orb__glow" />

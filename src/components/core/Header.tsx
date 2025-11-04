@@ -19,6 +19,8 @@ export function Header({ user: _user }: { user: { displayName?: string | null } 
   const { preferences, displayName } = usePreferences()
   const base = getGreeting()
   const tagline = greetings[(new Date().getDay() + new Date().getHours()) % greetings.length]
+  const workspaceTitle = displayName ? `${displayName}'s mastery cockpit` : 'Synapse mastery cockpit'
+  const moodline = `${base}. ${tagline}`
   const now = new Date()
   const [dateFormatter, timeFormatter, timezoneLabel] = useMemo(() => {
     const { timezone } = preferences
@@ -50,8 +52,8 @@ export function Header({ user: _user }: { user: { displayName?: string | null } 
       zIndex: 20
     }}>
       <div>
-        <div style={{ fontSize: 28, fontWeight: 800 }}>{base}{displayName ? `, ${displayName}` : ''}</div>
-        <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{tagline}</div>
+        <div style={{ fontSize: 24, fontWeight: 800 }}>{workspaceTitle}</div>
+        <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{moodline}</div>
       </div>
       <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{timeFormatter.format(now)}</div>
