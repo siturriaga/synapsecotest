@@ -37,6 +37,50 @@ const popupFallbackCodes = new Set([
   'auth/internal-error'
 ])
 
+function detectPopupRestrictions() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  try {
+    if (window.crossOriginIsolated) {
+      return true
+    }
+    if (typeof document !== 'undefined') {
+      const coopMeta = document.querySelector('meta[http-equiv="Cross-Origin-Opener-Policy"]')
+      const policy = coopMeta?.getAttribute('content')?.toLowerCase().trim()
+      if (policy && policy !== 'same-origin-allow-popups') {
+        return true
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to determine popup restrictions', err)
+  }
+  return false
+}
+
+let preferRedirect = detectPopupRestrictions()
+
+function shouldUseRedirect() {
+  if (preferRedirect) {
+    return true
+  }
+  if (detectPopupRestrictions()) {
+    preferRedirect = true
+    return true
+  }
+  return false
+}
+
+function isPopupBlockedError(err: any, message: string | undefined) {
+  if (err?.code && popupFallbackCodes.has(err.code)) {
+    return true
+  }
+  if (!message) {
+    return false
+  }
+  return message.includes('Cross-Origin-Opener-Policy') || message.includes('window.close') || message.includes('window.closed')
+}
+
 async function ensurePersistence() {
   try {
     await setPersistence(auth, browserLocalPersistence)
@@ -47,10 +91,16 @@ async function ensurePersistence() {
 
 export async function googleSignIn() {
   await ensurePersistence()
+  if (shouldUseRedirect()) {
+    await signInWithRedirect(auth, provider)
+    return
+  }
   try {
     await signInWithPopup(auth, provider)
   } catch (err: any) {
-    if (err?.code && popupFallbackCodes.has(err.code)) {
+    const message: string | undefined = typeof err?.message === 'string' ? err.message : undefined
+    if (shouldUseRedirect() || isPopupBlockedError(err, message)) {
+      preferRedirect = true
       await signInWithRedirect(auth, provider)
       return
     }
