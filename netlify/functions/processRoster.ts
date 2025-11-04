@@ -3,6 +3,7 @@ import type { Handler, HandlerEvent, HandlerContext, HandlerResponse } from "@ne
 import { Buffer } from "buffer";
 import { Readable } from "stream";
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
+import type { DocumentData } from "firebase-admin/firestore";
 import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as ExcelJS from 'exceljs';
@@ -198,7 +199,7 @@ const UNIVERSAL_PRACTICES = {
 };
 
 function describeScore(score: number | null) {
-  if (score === null || score === undefined || Number.isNaN(score)) return '—';
+  if (score === null || score === undefined || Number.isNaN(score)) return 'N/A';
   const rounded = Number(score.toFixed(1));
   return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
 }
@@ -232,7 +233,7 @@ function buildGroupInsightsForServer(rows: any[], summary: { average: number | n
       return {
         id,
         label: toolkit.label,
-        range: minScore !== null && maxScore !== null ? `${describeScore(minScore)}–${describeScore(maxScore)}` : '—',
+        range: minScore !== null && maxScore !== null ? `${describeScore(minScore)}–${describeScore(maxScore)}` : 'N/A',
         studentCount: segment.length,
         recommendedPractices: toolkit.practices,
         students: segment.map((row) => ({
@@ -559,7 +560,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         mergedValues.score = manual?.score ?? null;
       }
 
-      const issues: string[] = [];
+      const blockingIssues: string[] = [];
+      const warnings: string[] = [];
       let nameCandidates = buildNameParts(mergedValues);
       const manualName =
         manual && Object.prototype.hasOwnProperty.call(manual, 'displayName')
@@ -578,17 +580,16 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
       const displayName = nameCandidates[0] ?? null;
       if (!displayName) {
-        issues.push("missing_name");
+        nameCandidates = [];
+        blockingIssues.push("missing_name");
       }
 
       const period = cp(mergedValues.period ?? defaultPeriod ?? meta.period);
       const quarter = cq(mergedValues.quarter ?? defaultQuarter ?? meta.quarter);
-      if (!period) issues.push("invalid_period");
-      if (!quarter) issues.push("invalid_quarter");
 
       const score = parseScore(mergedValues.score);
       if (score === null) {
-        issues.push("missing_score");
+        blockingIssues.push("missing_score");
       }
 
       let testName = String(mergedValues.testName ?? '').trim();
@@ -596,20 +597,23 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName = defaultTestName;
       }
       if (!testName) {
-        issues.push("missing_test_name");
+        testName = 'N/A';
       }
+
+      const issues = [...blockingIssues, ...warnings];
+      const status = blockingIssues.length ? "needs_review" : "ok";
 
       return {
         row: rowNumber,
         data: {
           displayName: displayName,
           nameVariants: nameCandidates,
-          period: period,
-          quarter: quarter,
+          period: period ?? null,
+          quarter: quarter ?? null,
           score: score,
           testName: testName || null
         },
-        status: issues.length ? "needs_review" : "ok",
+        status,
         issues: issues.length ? issues : undefined
       };
     });
@@ -626,23 +630,66 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       return json(200, { rows: reviewed, stats, assessmentSummary, ...(storageWarning ? { storageWarning } : {}) });
     }
 
-    if (validRows.length === 0) {
-      return json(422, { error: "No valid mastery rows detected. Resolve flagged rows before committing." });
-    }
-
     const batch = admin.firestore().batch();
     const now = admin.firestore.FieldValue.serverTimestamp();
     let written = 0, skipped = 0;
-    const testName = validRows[0]?.data.testName || defaultTestName || 'Untitled assessment';
+    const testName = validRows[0]?.data.testName || defaultTestName || 'N/A';
     const periodForSummary = validRows.find((row) => row.data.period)?.data.period ?? defaultPeriod ?? null;
     const quarterForSummary = validRows.find((row) => row.data.quarter)?.data.quarter ?? defaultQuarter ?? null;
     const testKey = testName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `assessment-${Date.now()}`;
 
-    validRows.forEach((row: any) => {
+    const rowContexts = validRows.map((row: any) => ({
+      row,
+      studentId: buildStudentIdentifier({ ...row.data, row: row.row })
+    }));
+
+    const uniqueStudentIds = Array.from(new Set(rowContexts.map((context) => context.studentId)));
+    const existingStudentDocs = uniqueStudentIds.length
+      ? await admin.firestore().getAll(
+          ...uniqueStudentIds.map((id) => admin.firestore().doc(`users/${uid}/students/${id}`))
+        )
+      : [];
+
+    const existingStudentMap = new Map<string, DocumentData | undefined>();
+    existingStudentDocs.forEach((docSnap, index) => {
+      existingStudentMap.set(uniqueStudentIds[index], docSnap.exists ? docSnap.data() : undefined);
+    });
+
+    rowContexts.forEach(({ row, studentId }) => {
+      const existing = existingStudentMap.get(studentId);
+      if ((row.data.period === null || row.data.period === undefined) && existing) {
+        if (typeof existing.period === 'number' && Number.isFinite(existing.period)) {
+          row.data.period = existing.period;
+        } else if (Array.isArray(existing.periodHistory)) {
+          const mostRecent = existing.periodHistory
+            .slice()
+            .reverse()
+            .find((value: any) => Number.isInteger(value));
+          if (typeof mostRecent === 'number') {
+            row.data.period = mostRecent;
+          }
+        }
+      }
+      if ((row.data.quarter === null || row.data.quarter === undefined) && existing) {
+        if (typeof existing.quarter === 'string' && existing.quarter.trim()) {
+          row.data.quarter = existing.quarter;
+        } else if (Array.isArray(existing.quarterHistory)) {
+          const recentQuarter = existing.quarterHistory
+            .slice()
+            .reverse()
+            .find((value: any) => typeof value === 'string' && value.trim());
+          if (typeof recentQuarter === 'string') {
+            row.data.quarter = recentQuarter;
+          }
+        }
+      }
+      (row as any).studentId = studentId;
+    });
+
+    rowContexts.forEach(({ row, studentId }) => {
       const assessmentsCollection = admin.firestore().collection(`users/${uid}/assessments`);
       const ref = assessmentsCollection.doc();
       const assessmentId = ref.id;
-      const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row });
       batch.set(ref, {
         displayName: row.data.displayName,
         nameVariants: row.data.nameVariants,
@@ -652,12 +699,12 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName: row.data.testName,
         sourceUploadId: uploadId,
         sheetRow: row.row,
-        studentId: studentIdentifier,
+        studentId,
         createdAt: now,
         updatedAt: now
       });
 
-      const studentRef = admin.firestore().doc(`users/${uid}/students/${studentIdentifier}`);
+      const studentRef = admin.firestore().doc(`users/${uid}/students/${studentId}`);
       batch.set(
         studentRef,
         {
@@ -671,7 +718,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           lastSheetRow: row.row ?? null,
           updatedAt: now,
           uploads: admin.firestore.FieldValue.increment(1),
-          studentId: studentIdentifier,
+          studentId,
           ...(row.data.period !== null
             ? { periodHistory: admin.firestore.FieldValue.arrayUnion(row.data.period) }
             : {}),
@@ -691,10 +738,9 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         sheetRow: row.row ?? null,
         uploadId,
         createdAt: now,
-        studentId: studentIdentifier
+        studentId
       });
 
-      (row as any).studentId = studentIdentifier;
       written++;
     });
     skipped = reviewed.length - written;

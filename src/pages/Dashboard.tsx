@@ -17,6 +17,8 @@ interface DashboardProps {
   loading?: boolean
 }
 
+const PERIOD_CHOICES = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+
 type Pulse = {
   id: string
   title: string
@@ -107,19 +109,31 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
     }
   }, [rosterStudents, selectedStudentId])
 
-  const periodOptions = useMemo(() => {
+  const activePeriods = useMemo(() => {
     const set = new Set<string>()
     rosterRecords.forEach((record) => {
       if (record.period !== null && record.period !== undefined) {
         set.add(String(record.period))
       }
     })
-    return Array.from(set).sort((a, b) => Number(a) - Number(b))
-  }, [rosterRecords])
+    rosterStudents.forEach((student) => {
+      if (student.period !== null && student.period !== undefined) {
+        set.add(String(student.period))
+      }
+    })
+    return set
+  }, [rosterRecords, rosterStudents])
+
+  const periodOptions = useMemo(() => {
+    const combined = Array.from(new Set<string>([...PERIOD_CHOICES, ...Array.from(activePeriods)]))
+    combined.sort((a, b) => Number(a) - Number(b))
+    return combined.map((value) => ({ value, hasData: activePeriods.has(value) }))
+  }, [activePeriods])
 
   useEffect(() => {
-    if (selectedPeriod !== 'all' && !periodOptions.includes(selectedPeriod)) {
-      setSelectedPeriod(periodOptions[0] ?? 'all')
+    if (selectedPeriod === 'all') return
+    if (!periodOptions.some((option) => option.value === selectedPeriod)) {
+      setSelectedPeriod(periodOptions[0]?.value ?? 'all')
     }
   }, [periodOptions, selectedPeriod])
 
@@ -146,13 +160,21 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
   }, [rosterRecords, selectedPeriod])
 
   const classMetrics = useMemo(() => {
-    if (!filteredClassRecords.length) return null
-    const scoredRecords = filteredClassRecords.filter((record) => typeof record.score === 'number') as Array<
-      typeof filteredClassRecords[number] & { score: number }
-    >
     const assessments = Array.from(
       new Set(filteredClassRecords.map((record) => record.testName).filter((value): value is string => Boolean(value)))
     )
+    if (!filteredClassRecords.length) {
+      return {
+        average: null,
+        topRecord: null,
+        bottomRecord: null,
+        total: 0,
+        assessments
+      }
+    }
+    const scoredRecords = filteredClassRecords.filter((record) => typeof record.score === 'number') as Array<
+      typeof filteredClassRecords[number] & { score: number }
+    >
     if (!scoredRecords.length) {
       return {
         average: null,
@@ -277,7 +299,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           id: 'latest-average',
           label: 'Latest class average',
           value: average ?? 0,
-          displayValue: average !== null ? average.toFixed(1) : '—'
+          displayValue: average !== null ? average.toFixed(1) : 'N/A'
         })
         if (typeof summary.studentCount === 'number') {
           cards.push({ id: 'latest-count', label: 'Students assessed', value: summary.studentCount })
@@ -326,7 +348,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         })
       }
       if (cards.length === 0) {
-        cards.push({ id: 'placeholder', label: 'Data incoming', value: 0, displayValue: '—' })
+        cards.push({ id: 'placeholder', label: 'Data incoming', value: 0, displayValue: 'N/A' })
       }
       setStats(cards)
     })
@@ -353,7 +375,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          title: data.title ?? 'Untitled assignment',
+          title: data.title ?? 'N/A',
           dueDate: data.dueDate,
           status: data.status ?? 'draft'
         })
@@ -368,7 +390,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          testName: data.testName ?? 'Assessment',
+          testName: data.testName ?? 'N/A',
           period: data.period,
           quarter: data.quarter,
           studentCount: data.studentCount,
@@ -426,17 +448,26 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <strong>Class view</strong>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  <label htmlFor="dashboard-period-filter" style={{ fontWeight: 600 }}>
+                    View all classes or focus on a period
+                  </label>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                    Choose a period (1–8) to filter class metrics. Periods without data show “N/A” until uploads arrive.
+                  </span>
+                </div>
                 <select
+                  id="dashboard-period-filter"
+                  name="dashboard-period-filter"
                   value={selectedPeriod}
                   onChange={(event) => setSelectedPeriod(event.target.value)}
                   className="table-input"
                   style={{ maxWidth: 160 }}
                 >
-                  <option value="all">All periods</option>
+                  <option value="all">View all classes</option>
                   {periodOptions.map((option) => (
-                    <option key={option} value={option}>
-                      Period {option}
+                    <option key={option.value} value={option.value}>
+                      {`Period ${option.value}${option.hasData ? '' : ' (no data yet)'}`}
                     </option>
                   ))}
                 </select>
@@ -445,19 +476,21 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 <div style={{ display: 'grid', gap: 10, fontSize: 14 }}>
                   <div>
                     <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Students</span>
-                    <div style={{ fontSize: 24, fontWeight: 700 }}>{classMetrics.total}</div>
+                    <div style={{ fontSize: 24, fontWeight: 700 }}>
+                      {classMetrics.total > 0 ? classMetrics.total : 'N/A'}
+                    </div>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Average</span>
                     <div style={{ fontSize: 22, fontWeight: 700 }}>
-                      {classMetrics.average !== null ? classMetrics.average.toFixed(1) : '—'}
+                      {classMetrics.average !== null ? classMetrics.average.toFixed(1) : 'N/A'}
                     </div>
                   </div>
                   {classMetrics.topRecord && (
                     <div>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Top performer</span>
                       <div style={{ marginTop: 4 }}>
-                        {classMetrics.topRecord.displayName} · {classMetrics.topRecord.score ?? '—'}
+                        {classMetrics.topRecord.displayName} · {classMetrics.topRecord.score ?? 'N/A'}
                       </div>
                     </div>
                   )}
@@ -465,7 +498,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                     <div>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Needs support</span>
                       <div style={{ marginTop: 4 }}>
-                        {classMetrics.bottomRecord.displayName} · {classMetrics.bottomRecord.score ?? '—'}
+                        {classMetrics.bottomRecord.displayName} · {classMetrics.bottomRecord.score ?? 'N/A'}
                       </div>
                     </div>
                   )}
@@ -540,7 +573,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                     <div style={{ marginTop: 4 }}>
                       {selectedStudent.lastScore !== null && selectedStudent.lastScore !== undefined
                         ? selectedStudent.lastScore
-                        : '—'}
+                        : 'N/A'}
                       {selectedStudent.lastAssessment && ` · ${selectedStudent.lastAssessment}`}
                     </div>
                   </div>
@@ -549,7 +582,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                     <div style={{ marginTop: 4 }}>
                       {studentMetrics?.average !== null && studentMetrics?.average !== undefined
                         ? studentMetrics.average.toFixed(1)
-                        : '—'}
+                        : 'N/A'}
                     </div>
                   </div>
                   {selectedStudent.periodHistory && selectedStudent.periodHistory.length > 0 && (
@@ -581,7 +614,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                       >
                         {studentMetrics.recent.map((entry) => (
                           <li key={entry.id}>
-                            {entry.testName ?? 'Assessment'} · {entry.score ?? '—'}
+                            {entry.testName ?? 'N/A'} · {entry.score ?? 'N/A'}
                           </li>
                         ))}
                       </ul>
@@ -615,18 +648,18 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                   <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
                     {derivedLatestAssessment.averageScore !== null && derivedLatestAssessment.averageScore !== undefined
                       ? derivedLatestAssessment.averageScore.toFixed(1)
-                      : '—'}
+                      : 'N/A'}
                   </div>
                 </div>
                 <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
                   <strong>Range</strong>
                   <div style={{ marginTop: 6 }}>
-                    High {derivedLatestAssessment.maxScore ?? '—'} · Low {derivedLatestAssessment.minScore ?? '—'}
+                    High {derivedLatestAssessment.maxScore ?? 'N/A'} · Low {derivedLatestAssessment.minScore ?? 'N/A'}
                   </div>
                 </div>
                 <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
                   <strong>Learners</strong>
-                  <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{derivedLatestAssessment.studentCount ?? '—'}</div>
+                  <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{derivedLatestAssessment.studentCount ?? 'N/A'}</div>
                 </div>
               </div>
             </div>
@@ -658,12 +691,12 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 {combinedSummaries.map((snapshot) => (
                   <tr key={snapshot.id}>
                     <td>{snapshot.testName}</td>
-                    <td>{snapshot.period ?? '—'}</td>
-                    <td>{snapshot.quarter ?? '—'}</td>
-                    <td>{snapshot.averageScore !== null && snapshot.averageScore !== undefined ? snapshot.averageScore.toFixed(1) : '—'}</td>
-                    <td>{snapshot.maxScore ?? '—'}</td>
-                    <td>{snapshot.minScore ?? '—'}</td>
-                    <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : '—'}</td>
+                    <td>{snapshot.period ?? 'N/A'}</td>
+                    <td>{snapshot.quarter ?? 'N/A'}</td>
+                    <td>{snapshot.averageScore !== null && snapshot.averageScore !== undefined ? snapshot.averageScore.toFixed(1) : 'N/A'}</td>
+                    <td>{snapshot.maxScore ?? 'N/A'}</td>
+                    <td>{snapshot.minScore ?? 'N/A'}</td>
+                    <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : 'N/A'}</td>
                   </tr>
                 ))}
               </tbody>

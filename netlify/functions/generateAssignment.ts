@@ -101,7 +101,7 @@ function normalizeClassGroups(groups: unknown): NormalizedClassGroup[] {
       return {
         id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `group-${index + 1}`,
         label,
-        range: typeof raw.range === 'string' && raw.range.trim() ? raw.range.trim() : '—',
+        range: typeof raw.range === 'string' && raw.range.trim() ? raw.range.trim() : 'N/A',
         studentCount:
           typeof raw.studentCount === 'number' && Number.isFinite(raw.studentCount) && raw.studentCount >= 0
             ? Math.floor(raw.studentCount)

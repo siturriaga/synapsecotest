@@ -3,6 +3,8 @@ import { auth } from '../firebase'
 const NETLIFY_PREFIX = '/.netlify/functions/'
 const API_PREFIX = '/api/'
 const LOCAL_NETLIFY_ORIGIN = 'http://localhost:8888'
+const REMOTE_FUNCTION_BASE = (import.meta.env?.VITE_FUNCTION_BASE_URL || 'https://synapsecopilot.com')
+  .replace(/\/$/, '')
 
 class SafeFetchError extends Error {
   status: number
@@ -79,13 +81,19 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
         apiError instanceof SafeFetchError &&
         apiError.status === 404
 
-      if (!canUseLocalNetlify) {
-        throw apiError
+      if (canUseLocalNetlify) {
+        const localUrl = `${LOCAL_NETLIFY_ORIGIN}${url}`
+        const response = await attempt(localUrl)
+        return (await response.json()) as T
       }
 
-      const localUrl = `${LOCAL_NETLIFY_ORIGIN}${url}`
-      const response = await attempt(localUrl)
-      return (await response.json()) as T
+      if (apiError instanceof SafeFetchError && apiError.status === 404) {
+        const remoteUrl = `${REMOTE_FUNCTION_BASE}${url}`
+        const response = await attempt(remoteUrl)
+        return (await response.json()) as T
+      }
+
+      throw apiError
     }
   }
 }
