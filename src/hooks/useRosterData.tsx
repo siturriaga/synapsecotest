@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import {
   collection,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -204,14 +205,6 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const [syncError, setSyncError] = useState<string | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
 
-  const payloadRef = useRef<{
-    records: SavedAssessment[]
-    summaries: AssessmentSnapshotRecord[]
-    students: StudentRosterRecord[]
-    uploads: SavedRosterUpload[]
-    groupInsights: RosterGroupInsight[]
-    pedagogy: PedagogicalGuidance | null
-  } | null>(null)
   const hasPendingSync = useRef(false)
   const savingRef = useRef(false)
 
@@ -222,7 +215,6 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       setStudents([])
       setUploads([])
       setLoading(false)
-      payloadRef.current = null
       hasPendingSync.current = false
       setSyncStatus('idle')
       setSyncError(null)
@@ -392,11 +384,9 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const pedagogicalGuidance = groupResult.pedagogy
 
   useEffect(() => {
-    payloadRef.current = { records, summaries, students, uploads, groupInsights, pedagogy: pedagogicalGuidance }
-    if (user) {
-      hasPendingSync.current = true
-    }
-  }, [records, summaries, students, uploads, groupInsights, pedagogicalGuidance, user])
+    if (!user || loading) return
+    hasPendingSync.current = true
+  }, [user, loading, records, summaries, students, uploads, groupInsights, pedagogicalGuidance])
 
   const computeInsights = useMemo<RosterInsights | null>(() => {
     if (!records.length && !summaries.length) return null
@@ -433,15 +423,32 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
 
   const saveSnapshot = useCallback(async () => {
     if (!user || savingRef.current) return
-    const payload = payloadRef.current
-    if (!payload) return
+
+    const snapshotRecords = records
+    const snapshotSummaries = summaries
+    const snapshotStudents = students
+    const snapshotGroups = groupInsights
+    const snapshotPedagogy = pedagogicalGuidance
+
+    const hasData =
+      snapshotRecords.length > 0 ||
+      snapshotSummaries.length > 0 ||
+      snapshotStudents.length > 0 ||
+      uploads.length > 0
+
+    if (!hasData) {
+      hasPendingSync.current = false
+      return
+    }
+
     savingRef.current = true
     setSyncStatus('saving')
     setSyncError(null)
+
     try {
       const nowIso = new Date().toISOString()
       const docRef = doc(db, `users/${user.uid}/workspace_cache/rosterSnapshot`)
-      const scored = payload.records
+      const scored = snapshotRecords
         .filter((record) => typeof record.score === 'number')
         .sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity))
       const top = scored.slice(0, 5).map((record) => ({
@@ -462,69 +469,130 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         recordedAt: record.createdAt ? record.createdAt.toISOString() : null
       }))
 
-      await setDoc(
-        docRef,
-        {
-          lastClientSyncAt: nowIso,
-          updatedAt: serverTimestamp(),
-          stats: {
-            totalAssessments: payload.records.length,
-            totalSummaries: payload.summaries.length,
-            totalStudents: payload.students.length
+      const metricsRef = doc(db, `users/${user.uid}/dashboard_stats/metrics`)
+      const metricsSnap = await getDoc(metricsRef)
+      const previousRosterGroupCount = metricsSnap.exists()
+        ? Number(metricsSnap.data()?.rosterGroupCount ?? metricsSnap.data()?.groupCount ?? 0)
+        : 0
+      const foundationGroup = snapshotGroups.find((group) => group.id === 'foundation')
+      const nonFoundationCount = snapshotGroups
+        .filter((group) => group.id !== 'foundation')
+        .reduce((total, group) => total + group.studentCount, 0)
+
+      const isAssessmentEntry = (
+        entry: SavedAssessment | StudentRosterRecord
+      ): entry is SavedAssessment => (entry as SavedAssessment).score !== undefined
+
+      const recentRosterEntries = (snapshotRecords.length ? snapshotRecords : snapshotStudents)
+        .slice(0, 20)
+        .map((entry) => {
+          if (isAssessmentEntry(entry)) {
+            return {
+              name: entry.displayName,
+              score: entry.score,
+              testName: entry.testName,
+              period: entry.period,
+              quarter: entry.quarter,
+              sheetRow: entry.sheetRow ?? null,
+              uploadedAt: entry.createdAt ? entry.createdAt.toISOString() : null
+            }
+          }
+
+          return {
+            name: entry.displayName,
+            score: entry.lastScore ?? null,
+            testName: entry.lastAssessment ?? null,
+            period: entry.period ?? null,
+            quarter: entry.quarter ?? null,
+            sheetRow: entry.lastSheetRow ?? null,
+            uploadedAt: entry.updatedAt ? entry.updatedAt.toISOString() : null
+          }
+        })
+
+      await Promise.all([
+        setDoc(
+          docRef,
+          {
+            lastClientSyncAt: nowIso,
+            updatedAt: serverTimestamp(),
+            stats: {
+              totalAssessments: snapshotRecords.length,
+              totalSummaries: snapshotSummaries.length,
+              totalStudents: snapshotStudents.length
+            },
+            latestAssessment: snapshotSummaries[0]
+              ? {
+                  id: snapshotSummaries[0].id,
+                  testName: snapshotSummaries[0].testName,
+                  period: snapshotSummaries[0].period,
+                  quarter: snapshotSummaries[0].quarter,
+                  studentCount: snapshotSummaries[0].studentCount,
+                  averageScore: snapshotSummaries[0].averageScore,
+                  maxScore: snapshotSummaries[0].maxScore,
+                  minScore: snapshotSummaries[0].minScore,
+                  updatedAt: snapshotSummaries[0].updatedAt
+                    ? snapshotSummaries[0].updatedAt.toISOString()
+                    : null
+                }
+              : null,
+            highlights: {
+              topStudents: top,
+              needsSupport: bottom
+            },
+            groupInsights: snapshotGroups.map((group) => ({
+              id: group.id,
+              label: group.label,
+              range: group.range,
+              studentCount: group.studentCount,
+              recommendedPractices: group.recommendedPractices,
+              students: group.students.map((student) => ({
+                name: student.name,
+                score: student.score,
+                testName: student.testName,
+                period: student.period,
+                quarter: student.quarter,
+                recordedAt: student.recordedAt ? student.recordedAt.toISOString() : null
+              }))
+            })),
+            pedagogy: snapshotPedagogy
+              ? {
+                  summary: snapshotPedagogy.summary,
+                  bestPractices: snapshotPedagogy.bestPractices,
+                  reflectionPrompts: snapshotPedagogy.reflectionPrompts
+                }
+              : null,
+            recentStudents: recentRosterEntries
           },
-          latestAssessment: payload.summaries[0]
-            ? {
-                id: payload.summaries[0].id,
-                testName: payload.summaries[0].testName,
-                period: payload.summaries[0].period,
-                quarter: payload.summaries[0].quarter,
-                studentCount: payload.summaries[0].studentCount,
-                averageScore: payload.summaries[0].averageScore,
-                maxScore: payload.summaries[0].maxScore,
-                minScore: payload.summaries[0].minScore,
-                updatedAt: payload.summaries[0].updatedAt
-                  ? payload.summaries[0].updatedAt.toISOString()
-                  : null
-              }
-            : null,
-          highlights: {
-            topStudents: top,
-            needsSupport: bottom
+          { merge: true }
+        ),
+        setDoc(
+          metricsRef,
+          {
+            totalEnrollment: snapshotStudents.length,
+            lastClientSyncAt: nowIso,
+            rosterGroupCount: snapshotGroups.length,
+            rosterGroupDelta: snapshotGroups.length - previousRosterGroupCount,
+            onTrack: nonFoundationCount,
+            atRisk: foundationGroup?.studentCount ?? 0,
+            latestAssessment: snapshotSummaries[0]
+              ? {
+                  testName: snapshotSummaries[0].testName,
+                  period: snapshotSummaries[0].period,
+                  quarter: snapshotSummaries[0].quarter,
+                  studentCount: snapshotSummaries[0].studentCount,
+                  averageScore: snapshotSummaries[0].averageScore,
+                  maxScore: snapshotSummaries[0].maxScore,
+                  minScore: snapshotSummaries[0].minScore,
+                  updatedAt: snapshotSummaries[0].updatedAt
+                    ? snapshotSummaries[0].updatedAt.toISOString()
+                    : null
+                }
+              : null
           },
-          groupInsights: payload.groupInsights.map((group) => ({
-            id: group.id,
-            label: group.label,
-            range: group.range,
-            studentCount: group.studentCount,
-            recommendedPractices: group.recommendedPractices,
-            students: group.students.map((student) => ({
-              name: student.name,
-              score: student.score,
-              testName: student.testName,
-              period: student.period,
-              quarter: student.quarter,
-              recordedAt: student.recordedAt ? student.recordedAt.toISOString() : null
-            }))
-          })),
-          pedagogy: payload.pedagogy
-            ? {
-                summary: payload.pedagogy.summary,
-                bestPractices: payload.pedagogy.bestPractices,
-                reflectionPrompts: payload.pedagogy.reflectionPrompts
-              }
-            : null,
-          recentStudents: payload.records.slice(0, 20).map((record) => ({
-            name: record.displayName,
-            score: record.score,
-            testName: record.testName,
-            period: record.period,
-            quarter: record.quarter,
-            sheetRow: record.sheetRow ?? null,
-            uploadedAt: record.createdAt ? record.createdAt.toISOString() : null
-          }))
-        },
-        { merge: true }
-      )
+          { merge: true }
+        )
+      ])
+
       hasPendingSync.current = false
       setSyncStatus('idle')
       setLastSyncedAt(new Date())
@@ -532,10 +600,19 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       console.error('Failed to sync roster snapshot', error)
       setSyncStatus('error')
       setSyncError(error?.message ?? 'Unable to sync roster snapshot')
+      hasPendingSync.current = true
     } finally {
       savingRef.current = false
     }
-  }, [user])
+  }, [
+    user,
+    records,
+    summaries,
+    students,
+    uploads,
+    groupInsights,
+    pedagogicalGuidance
+  ])
 
   useEffect(() => {
     if (!user) return
@@ -546,6 +623,22 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     }, 15000)
     return () => clearInterval(interval)
   }, [saveSnapshot, user])
+
+  useEffect(() => {
+    if (!user || loading) return
+    if (!hasPendingSync.current || savingRef.current) return
+    void saveSnapshot()
+  }, [
+    user,
+    loading,
+    records,
+    summaries,
+    students,
+    uploads,
+    groupInsights,
+    pedagogicalGuidance,
+    saveSnapshot
+  ])
 
   const value = useMemo<RosterDataContextValue>(
     () => ({

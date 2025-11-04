@@ -35,6 +35,46 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   microInteractions: true
 }
 
+const HEX_COLOR = /^#([0-9a-f]{6})$/i
+
+function normalizeTexture(value: any): TexturePreference {
+  return value === 'aurora' || value === 'orbs' || value === 'grid' || value === 'minimal' ? value : 'aurora'
+}
+
+function normalizeDarkMode(value: any): AppPreferences['darkMode'] {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+function normalizeColor(value: any, fallback: string) {
+  if (typeof value === 'string' && HEX_COLOR.test(value)) {
+    return value.toLowerCase()
+  }
+  return fallback
+}
+
+export function sanitizePreferences(data?: Partial<AppPreferences>): AppPreferences {
+  const base = { ...DEFAULT_APP_PREFERENCES }
+  if (!data) {
+    return base
+  }
+  return {
+    ...base,
+    ...data,
+    timezone: typeof data.timezone === 'string' && data.timezone.trim() ? data.timezone : base.timezone,
+    darkMode: normalizeDarkMode(data.darkMode),
+    dyslexiaFont: typeof data.dyslexiaFont === 'boolean' ? data.dyslexiaFont : base.dyslexiaFont,
+    notifications: typeof data.notifications === 'boolean' ? data.notifications : base.notifications,
+    displayNameOverride:
+      typeof data.displayNameOverride === 'string'
+        ? data.displayNameOverride.trim() || null
+        : null,
+    accentColor: normalizeColor(data.accentColor, base.accentColor),
+    surfaceColor: normalizeColor(data.surfaceColor, base.surfaceColor),
+    texture: normalizeTexture(data.texture),
+    microInteractions: typeof data.microInteractions === 'boolean' ? data.microInteractions : base.microInteractions
+  }
+}
+
 const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined)
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -140,7 +180,7 @@ export function PreferencesProvider({ user, children }: { user: User | null; chi
       ref,
       (snapshot) => {
         const data = snapshot.data() as Partial<AppPreferences> | undefined
-        setPreferences({ ...DEFAULT_APP_PREFERENCES, ...(data ?? {}) })
+        setPreferences(sanitizePreferences(data))
         setReady(true)
       },
       (error) => {
