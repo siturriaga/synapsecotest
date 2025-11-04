@@ -559,7 +559,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         mergedValues.score = manual?.score ?? null;
       }
 
-      const issues: string[] = [];
+      const blockingIssues: string[] = [];
+      const warnings: string[] = [];
       let nameCandidates = buildNameParts(mergedValues);
       const manualName =
         manual && Object.prototype.hasOwnProperty.call(manual, 'displayName')
@@ -578,17 +579,16 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
       const displayName = nameCandidates[0] ?? null;
       if (!displayName) {
-        issues.push("missing_name");
+        nameCandidates = [];
+        blockingIssues.push("missing_name");
       }
 
       const period = cp(mergedValues.period ?? defaultPeriod ?? meta.period);
       const quarter = cq(mergedValues.quarter ?? defaultQuarter ?? meta.quarter);
-      if (!period) issues.push("invalid_period");
-      if (!quarter) issues.push("invalid_quarter");
 
       const score = parseScore(mergedValues.score);
       if (score === null) {
-        issues.push("missing_score");
+        blockingIssues.push("missing_score");
       }
 
       let testName = String(mergedValues.testName ?? '').trim();
@@ -596,20 +596,23 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName = defaultTestName;
       }
       if (!testName) {
-        issues.push("missing_test_name");
+        testName = 'N/A';
       }
+
+      const issues = [...blockingIssues, ...warnings];
+      const status = blockingIssues.length ? "needs_review" : "ok";
 
       return {
         row: rowNumber,
         data: {
           displayName: displayName,
           nameVariants: nameCandidates,
-          period: period,
-          quarter: quarter,
+          period: period ?? null,
+          quarter: quarter ?? null,
           score: score,
           testName: testName || null
         },
-        status: issues.length ? "needs_review" : "ok",
+        status,
         issues: issues.length ? issues : undefined
       };
     });
@@ -629,7 +632,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     const batch = admin.firestore().batch();
     const now = admin.firestore.FieldValue.serverTimestamp();
     let written = 0, skipped = 0;
-    const testName = validRows[0]?.data.testName || defaultTestName || 'Untitled assessment';
+    const testName = validRows[0]?.data.testName || defaultTestName || 'N/A';
     const periodForSummary = validRows.find((row) => row.data.period)?.data.period ?? defaultPeriod ?? null;
     const quarterForSummary = validRows.find((row) => row.data.quarter)?.data.quarter ?? defaultQuarter ?? null;
     const testKey = testName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `assessment-${Date.now()}`;

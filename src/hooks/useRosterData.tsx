@@ -254,11 +254,11 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
 
         rows.push({
           id: docSnap.id,
-          displayName: data.displayName ?? 'Student',
+          displayName: data.displayName ?? 'N/A',
           score: normalizedScore,
           period: data.period ?? null,
           quarter: data.quarter ?? null,
-          testName: data.testName ?? null,
+          testName: data.testName ?? 'N/A',
           createdAt: data.createdAt?.toDate?.() ?? null,
           sheetRow: data.sheetRow ?? null,
           studentId: data.studentId ?? null
@@ -280,7 +280,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          testName: data.testName ?? 'Assessment',
+          testName: data.testName ?? 'N/A',
           period: data.period ?? null,
           quarter: data.quarter ?? null,
           studentCount: data.studentCount ?? null,
@@ -307,7 +307,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          displayName: data.displayName ?? 'Student',
+          displayName: data.displayName ?? 'N/A',
           nameVariants: Array.isArray(data.nameVariants) ? data.nameVariants : [],
           lastScore: typeof data.lastScore === 'number' ? data.lastScore : null,
           lastAssessment: data.lastAssessment ?? data.testName ?? null,

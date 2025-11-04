@@ -361,7 +361,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          title: data.title ?? 'Untitled assignment',
+          title: data.title ?? 'N/A',
           dueDate: data.dueDate,
           status: data.status ?? 'draft'
         })
@@ -376,7 +376,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         const data = docSnap.data() as any
         rows.push({
           id: docSnap.id,
-          testName: data.testName ?? 'Assessment',
+          testName: data.testName ?? 'N/A',
           period: data.period,
           quarter: data.quarter,
           studentCount: data.studentCount,
@@ -591,7 +591,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                       >
                         {studentMetrics.recent.map((entry) => (
                           <li key={entry.id}>
-                            {entry.testName ?? 'Assessment'} · {entry.score ?? 'N/A'}
+                            {entry.testName ?? 'N/A'} · {entry.score ?? 'N/A'}
                           </li>
                         ))}
                       </ul>

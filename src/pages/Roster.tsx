@@ -373,7 +373,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 <div style={{ fontSize: 15, marginTop: 6 }}>
                   {insights.highest.name} · {insights.highest.score ?? 'N/A'}
                   <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                    {insights.highest.testName ?? 'Assessment'}
+                    {insights.highest.testName ?? 'N/A'}
                   </div>
                 </div>
               </div>
@@ -384,7 +384,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 <div style={{ fontSize: 15, marginTop: 6 }}>
                   {insights.lowest.name} · {insights.lowest.score ?? 'N/A'}
                   <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                    {insights.lowest.testName ?? 'Assessment'}
+                    {insights.lowest.testName ?? 'N/A'}
                   </div>
                 </div>
               </div>
