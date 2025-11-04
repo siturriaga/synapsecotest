@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { DEFAULT_APP_PREFERENCES, type AppPreferences, type TexturePreference } from '../hooks/usePreferences'
+import {
+  DEFAULT_APP_PREFERENCES,
+  type AppPreferences,
+  type TexturePreference,
+  sanitizePreferences
+} from '../hooks/usePreferences'
 
 interface SettingsPageProps {
   user: User | null
@@ -18,44 +23,6 @@ const textureOptions: Array<{ value: TexturePreference; label: string; descripti
   { value: 'grid', label: 'Futuristic grid', description: 'Subtle tech grid with premium bloom accents.' },
   { value: 'minimal', label: 'Minimal', description: 'Tone the background down for focused planning sessions.' }
 ]
-
-const HEX_COLOR = /^#([0-9a-f]{6})$/i
-
-function normalizeTexture(value: any): TexturePreference {
-  return textureOptions.some((option) => option.value === value) ? (value as TexturePreference) : 'aurora'
-}
-
-function normalizeDarkMode(value: any): Preferences['darkMode'] {
-  return value === 'light' || value === 'dark' ? value : 'system'
-}
-
-function normalizeColor(value: any, fallback: string) {
-  if (typeof value === 'string' && HEX_COLOR.test(value)) {
-    return value.toLowerCase()
-  }
-  return fallback
-}
-
-function sanitizePreferences(data?: Partial<Preferences>): Preferences {
-  const base = createDefaultPreferences()
-  if (!data) return base
-  return {
-    ...base,
-    ...data,
-    timezone: typeof data.timezone === 'string' && data.timezone.trim() ? data.timezone : base.timezone,
-    darkMode: normalizeDarkMode(data.darkMode),
-    dyslexiaFont: typeof data.dyslexiaFont === 'boolean' ? data.dyslexiaFont : base.dyslexiaFont,
-    notifications: typeof data.notifications === 'boolean' ? data.notifications : base.notifications,
-    displayNameOverride:
-      typeof data.displayNameOverride === 'string'
-        ? data.displayNameOverride.trim() || null
-        : null,
-    accentColor: normalizeColor(data.accentColor, base.accentColor),
-    surfaceColor: normalizeColor(data.surfaceColor, base.surfaceColor),
-    texture: normalizeTexture(data.texture),
-    microInteractions: typeof data.microInteractions === 'boolean' ? data.microInteractions : base.microInteractions
-  }
-}
 
 export default function SettingsPage({ user }: SettingsPageProps) {
   const [preferences, setPreferences] = useState<Preferences>(() => createDefaultPreferences())
