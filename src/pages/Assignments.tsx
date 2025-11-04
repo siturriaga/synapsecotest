@@ -104,7 +104,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       const scoreB = b.score ?? 0
       return scoreA - scoreB
     })
-    return sorted.slice(0, 3).map((record) => `${record.displayName} (${record.score ?? '—'})`)
+    return sorted.slice(0, 3).map((record) => `${record.displayName} (${record.score ?? 'N/A'})`)
   }, [records])
 
   const focusNarrative = useMemo(() => {

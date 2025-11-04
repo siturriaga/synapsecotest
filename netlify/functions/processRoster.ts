@@ -198,7 +198,7 @@ const UNIVERSAL_PRACTICES = {
 };
 
 function describeScore(score: number | null) {
-  if (score === null || score === undefined || Number.isNaN(score)) return '—';
+  if (score === null || score === undefined || Number.isNaN(score)) return 'N/A';
   const rounded = Number(score.toFixed(1));
   return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
 }
@@ -232,7 +232,7 @@ function buildGroupInsightsForServer(rows: any[], summary: { average: number | n
       return {
         id,
         label: toolkit.label,
-        range: minScore !== null && maxScore !== null ? `${describeScore(minScore)}–${describeScore(maxScore)}` : '—',
+        range: minScore !== null && maxScore !== null ? `${describeScore(minScore)}–${describeScore(maxScore)}` : 'N/A',
         studentCount: segment.length,
         recommendedPractices: toolkit.practices,
         students: segment.map((row) => ({
@@ -624,10 +624,6 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
     if (mode === 'preview') {
       return json(200, { rows: reviewed, stats, assessmentSummary, ...(storageWarning ? { storageWarning } : {}) });
-    }
-
-    if (validRows.length === 0) {
-      return json(422, { error: "No valid mastery rows detected. Resolve flagged rows before committing." });
     }
 
     const batch = admin.firestore().batch();
