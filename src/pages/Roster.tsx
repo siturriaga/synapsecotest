@@ -51,12 +51,16 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const autoIntentRef = useRef<'update' | 'new' | undefined>()
+  const [uploadIntent, setUploadIntent] = useState<'update' | 'new'>('update')
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([])
+  const [bulkPeriod, setBulkPeriod] = useState('')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const {
     loading: rosterLoading,
     records,
     summaries,
+    students: rosterStudents,
     insights,
     groupInsights,
     pedagogy,
@@ -82,8 +86,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   }, [syncStatus, syncError, lastSyncedAt])
 
   useEffect(() => {
-    autoIntentRef.current = undefined
-  }, [file])
+    setSelectedStudentIds((prev) => prev.filter((id) => rosterStudents.some((student) => student.id === id)))
+  }, [rosterStudents])
 
   const handleDownload = useCallback((upload: SavedRosterUpload) => {
     try {
@@ -109,7 +113,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   }, [])
 
   const commitRoster = useCallback(
-    async (intent?: 'update' | 'new'): Promise<CommitResponse | null> => {
+    async (): Promise<CommitResponse | null> => {
       if (!user || !file) {
         setError('Select a file and ensure you are signed in.')
         return null
@@ -144,7 +148,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               uploadId,
               mode: 'commit',
               manualOverrides: {},
-              intent
+              intent: uploadIntent
             })
           }
         )
@@ -185,7 +189,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setLoading(false)
       }
     },
-    [user, file, period, quarter, testName, triggerSync]
+    [user, file, period, quarter, testName, triggerSync, uploadIntent]
   )
 
   const handleSubmit = useCallback(() => {
@@ -193,17 +197,80 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       return
     }
 
-    let intent = autoIntentRef.current
-    if (!testName.trim() && !intent) {
-      const wantsUpdate = window.confirm(
-        'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
-      )
-      intent = wantsUpdate ? 'update' : 'new'
-      autoIntentRef.current = intent
+    if (uploadIntent === 'new' && !testName.trim()) {
+      setError('Add a unique test name before publishing new data so we can track multiple assessments.')
+      return
     }
 
-    void commitRoster(intent)
-  }, [file, loading, testName, commitRoster])
+    void commitRoster()
+  }, [file, loading, uploadIntent, testName, commitRoster])
+
+  const selectedCount = selectedStudentIds.length
+  const allSelected = rosterStudents.length > 0 && selectedCount === rosterStudents.length
+
+  const toggleStudentSelection = useCallback(
+    (id: string) => {
+      setSelectedStudentIds((prev) => (prev.includes(id) ? prev.filter((existing) => existing !== id) : [...prev, id]))
+    },
+    []
+  )
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedStudentIds(rosterStudents.map((student) => student.id))
+  }, [rosterStudents])
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedStudentIds([])
+  }, [])
+
+  const handleBulkApply = useCallback(async () => {
+    if (!user) {
+      setError('Sign in to update class periods.')
+      return
+    }
+    const count = selectedStudentIds.length
+    if (!count) {
+      setError('Select at least one learner before applying a period number.')
+      return
+    }
+    const parsedPeriod = Number(bulkPeriod)
+    if (!Number.isInteger(parsedPeriod) || parsedPeriod < 1 || parsedPeriod > 8) {
+      setError('Choose a period number between 1 and 8 to apply to the selected learners.')
+      return
+    }
+
+    try {
+      setBulkUpdating(true)
+      setError(null)
+      await safeFetch<{ updated: number; period: number }>(
+        '/.netlify/functions/bulkUpdatePeriods',
+        {
+          method: 'POST',
+          body: JSON.stringify({ studentIds: selectedStudentIds, period: parsedPeriod })
+        }
+      )
+      setStatus(`Assigned period ${parsedPeriod} to ${count} learners. Rebuilding snapshots…`)
+      setBulkPeriod('')
+      setSelectedStudentIds([])
+      try {
+        const synced = await triggerSync()
+        if (synced) {
+          setStatus(`Class periods updated for ${count} learners.`)
+        } else {
+          setStatus('Class periods updated. Use “Sync now” to refresh the workspace snapshot.')
+          setError('Periods saved, but the workspace snapshot did not refresh automatically. Use “Sync now” to retry.')
+        }
+      } catch (syncErr) {
+        console.error('Unable to refresh snapshot after bulk period update', syncErr)
+        setError('Class periods saved. Use “Sync now” if the dashboard does not refresh immediately.')
+      }
+    } catch (err: any) {
+      console.error('Bulk period assignment failed', err)
+      setError(err?.message ?? 'Unable to update periods right now.')
+    } finally {
+      setBulkUpdating(false)
+    }
+  }, [user, selectedStudentIds, bulkPeriod, triggerSync])
 
   if (!user) {
     return (
@@ -250,7 +317,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div className="field">
             <label htmlFor="roster-test">
-              Name of the test or benchmark <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>(optional)</span>
+              Name of the test or benchmark <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>(recommended)</span>
             </label>
             <input
               id="roster-test"
@@ -258,11 +325,55 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               value={testName}
               onChange={(event) => setTestName(event.target.value)}
               placeholder="e.g., Q2 Expressions Mastery Check"
+              aria-describedby="roster-test-help"
             />
+            <p id="roster-test-help" style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+              Give each new upload a unique name so the AI can compare assessments over time and keep prior data intact.
+            </p>
+          </div>
+          <div className="field">
+            <span style={{ fontWeight: 600 }}>Is this a new dataset?</span>
+            <div
+              style={{
+                display: 'grid',
+                gap: 8,
+                marginTop: 8,
+                background: 'rgba(15,23,42,0.35)',
+                borderRadius: 12,
+                padding: '12px 14px',
+                border: '1px solid rgba(148,163,184,0.2)'
+              }}
+            >
+              <label htmlFor="roster-intent-update" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  id="roster-intent-update"
+                  name="roster-intent"
+                  value="update"
+                  checked={uploadIntent === 'update'}
+                  onChange={() => setUploadIntent('update')}
+                />
+                <span>Update an existing assessment</span>
+              </label>
+              <label htmlFor="roster-intent-new" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  id="roster-intent-new"
+                  name="roster-intent"
+                  value="new"
+                  checked={uploadIntent === 'new'}
+                  onChange={() => setUploadIntent('new')}
+                />
+                <span>Create a new assessment (requires a unique test name)</span>
+              </label>
+            </div>
           </div>
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
             <div className="field">
-              <label htmlFor="roster-period">Class period</label>
+              <label htmlFor="roster-period">
+                Default class period
+                <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> (optional)</span>
+              </label>
               <input
                 id="roster-period"
                 name="roster-period"
@@ -271,8 +382,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 max={8}
                 value={period}
                 onChange={(event) => setPeriod(event.target.value)}
-                placeholder="Optional"
+                placeholder="Leave blank if your file includes a Period column"
               />
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                We read any “Period” column in your upload automatically. Use this field only when you want to tag the entire
+                file with the same period.
+              </p>
             </div>
             <div className="field">
               <label htmlFor="roster-quarter">Quarter</label>
@@ -332,6 +447,115 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
             {syncStatus === 'saving' ? 'Saving…' : 'Sync now'}
           </button>
         </div>
+      </section>
+
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18 }}>
+          <div>
+            <div className="badge">Class periods</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Organize learners by period</h3>
+          </div>
+          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+            Selections apply instantly and guide future uploads.
+          </span>
+        </header>
+        <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+          Tag multiple students with the correct class period. The AI remembers these assignments and auto-fills periods for
+          matching names the next time you upload mastery results.
+        </p>
+        <div
+          style={{
+            display: 'grid',
+            gap: 16,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            alignItems: 'end'
+          }}
+        >
+          <div className="field">
+            <label htmlFor="bulk-period">Apply period number</label>
+            <input
+              id="bulk-period"
+              name="bulk-period"
+              type="number"
+              min={1}
+              max={8}
+              value={bulkPeriod}
+              onChange={(event) => setBulkPeriod(event.target.value)}
+              placeholder="1-8"
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                void handleBulkApply()
+              }}
+              disabled={bulkUpdating || !selectedCount}
+              style={{ minWidth: 180 }}
+            >
+              {bulkUpdating ? 'Applying…' : 'Apply to all selected'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={allSelected ? handleClearSelection : handleSelectAll}
+              style={{ minWidth: 140 }}
+            >
+              {allSelected ? 'Clear selection' : 'Select all'}
+            </button>
+          </div>
+        </div>
+        {selectedCount > 0 && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+            {selectedCount} {selectedCount === 1 ? 'learner' : 'learners'} ready for an update.
+          </p>
+        )}
+        {rosterStudents.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)' }}>
+            Upload a roster to start assigning class periods. Your selections will appear here for quick editing.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: 52 }}>Select</th>
+                <th>Learner</th>
+                <th>Period</th>
+                <th>Last score</th>
+                <th>Latest assessment</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rosterStudents.map((student) => {
+                const isChecked = selectedStudentIds.includes(student.id)
+                return (
+                  <tr key={student.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        id={`bulk-period-${student.id}`}
+                        name="bulk-period-selection"
+                        checked={isChecked}
+                        onChange={() => toggleStudentSelection(student.id)}
+                      />
+                    </td>
+                    <td>
+                      <label htmlFor={`bulk-period-${student.id}`} style={{ cursor: 'pointer' }}>
+                        {student.displayName}
+                      </label>
+                    </td>
+                    <td>{student.period ?? 'N/A'}</td>
+                    <td>{student.lastScore !== null && student.lastScore !== undefined ? student.lastScore : 'N/A'}</td>
+                    <td>{student.lastAssessment ?? 'N/A'}</td>
+                    <td>{student.updatedAt ? student.updatedAt.toLocaleString() : 'N/A'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>

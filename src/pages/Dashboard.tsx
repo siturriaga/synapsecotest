@@ -17,6 +17,8 @@ interface DashboardProps {
   loading?: boolean
 }
 
+const PERIOD_CHOICES = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+
 type Pulse = {
   id: string
   title: string
@@ -107,19 +109,31 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
     }
   }, [rosterStudents, selectedStudentId])
 
-  const periodOptions = useMemo(() => {
+  const activePeriods = useMemo(() => {
     const set = new Set<string>()
     rosterRecords.forEach((record) => {
       if (record.period !== null && record.period !== undefined) {
         set.add(String(record.period))
       }
     })
-    return Array.from(set).sort((a, b) => Number(a) - Number(b))
-  }, [rosterRecords])
+    rosterStudents.forEach((student) => {
+      if (student.period !== null && student.period !== undefined) {
+        set.add(String(student.period))
+      }
+    })
+    return set
+  }, [rosterRecords, rosterStudents])
+
+  const periodOptions = useMemo(() => {
+    const combined = Array.from(new Set<string>([...PERIOD_CHOICES, ...Array.from(activePeriods)]))
+    combined.sort((a, b) => Number(a) - Number(b))
+    return combined.map((value) => ({ value, hasData: activePeriods.has(value) }))
+  }, [activePeriods])
 
   useEffect(() => {
-    if (selectedPeriod !== 'all' && !periodOptions.includes(selectedPeriod)) {
-      setSelectedPeriod(periodOptions[0] ?? 'all')
+    if (selectedPeriod === 'all') return
+    if (!periodOptions.some((option) => option.value === selectedPeriod)) {
+      setSelectedPeriod(periodOptions[0]?.value ?? 'all')
     }
   }, [periodOptions, selectedPeriod])
 
@@ -434,17 +448,26 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <strong>Class view</strong>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  <label htmlFor="dashboard-period-filter" style={{ fontWeight: 600 }}>
+                    View all classes or focus on a period
+                  </label>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                    Choose a period (1–8) to filter class metrics. Periods without data show “N/A” until uploads arrive.
+                  </span>
+                </div>
                 <select
+                  id="dashboard-period-filter"
+                  name="dashboard-period-filter"
                   value={selectedPeriod}
                   onChange={(event) => setSelectedPeriod(event.target.value)}
                   className="table-input"
                   style={{ maxWidth: 160 }}
                 >
-                  <option value="all">All periods</option>
+                  <option value="all">View all classes</option>
                   {periodOptions.map((option) => (
-                    <option key={option} value={option}>
-                      Period {option}
+                    <option key={option.value} value={option.value}>
+                      {`Period ${option.value}${option.hasData ? '' : ' (no data yet)'}`}
                     </option>
                   ))}
                 </select>

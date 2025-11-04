@@ -3,6 +3,7 @@ import type { Handler, HandlerEvent, HandlerContext, HandlerResponse } from "@ne
 import { Buffer } from "buffer";
 import { Readable } from "stream";
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
+import type { DocumentData } from "firebase-admin/firestore";
 import * as mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import * as ExcelJS from 'exceljs';
@@ -637,11 +638,58 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     const quarterForSummary = validRows.find((row) => row.data.quarter)?.data.quarter ?? defaultQuarter ?? null;
     const testKey = testName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `assessment-${Date.now()}`;
 
-    validRows.forEach((row: any) => {
+    const rowContexts = validRows.map((row: any) => ({
+      row,
+      studentId: buildStudentIdentifier({ ...row.data, row: row.row })
+    }));
+
+    const uniqueStudentIds = Array.from(new Set(rowContexts.map((context) => context.studentId)));
+    const existingStudentDocs = uniqueStudentIds.length
+      ? await admin.firestore().getAll(
+          ...uniqueStudentIds.map((id) => admin.firestore().doc(`users/${uid}/students/${id}`))
+        )
+      : [];
+
+    const existingStudentMap = new Map<string, DocumentData | undefined>();
+    existingStudentDocs.forEach((docSnap, index) => {
+      existingStudentMap.set(uniqueStudentIds[index], docSnap.exists ? docSnap.data() : undefined);
+    });
+
+    rowContexts.forEach(({ row, studentId }) => {
+      const existing = existingStudentMap.get(studentId);
+      if ((row.data.period === null || row.data.period === undefined) && existing) {
+        if (typeof existing.period === 'number' && Number.isFinite(existing.period)) {
+          row.data.period = existing.period;
+        } else if (Array.isArray(existing.periodHistory)) {
+          const mostRecent = existing.periodHistory
+            .slice()
+            .reverse()
+            .find((value: any) => Number.isInteger(value));
+          if (typeof mostRecent === 'number') {
+            row.data.period = mostRecent;
+          }
+        }
+      }
+      if ((row.data.quarter === null || row.data.quarter === undefined) && existing) {
+        if (typeof existing.quarter === 'string' && existing.quarter.trim()) {
+          row.data.quarter = existing.quarter;
+        } else if (Array.isArray(existing.quarterHistory)) {
+          const recentQuarter = existing.quarterHistory
+            .slice()
+            .reverse()
+            .find((value: any) => typeof value === 'string' && value.trim());
+          if (typeof recentQuarter === 'string') {
+            row.data.quarter = recentQuarter;
+          }
+        }
+      }
+      (row as any).studentId = studentId;
+    });
+
+    rowContexts.forEach(({ row, studentId }) => {
       const assessmentsCollection = admin.firestore().collection(`users/${uid}/assessments`);
       const ref = assessmentsCollection.doc();
       const assessmentId = ref.id;
-      const studentIdentifier = buildStudentIdentifier({ ...row.data, row: row.row });
       batch.set(ref, {
         displayName: row.data.displayName,
         nameVariants: row.data.nameVariants,
@@ -651,12 +699,12 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         testName: row.data.testName,
         sourceUploadId: uploadId,
         sheetRow: row.row,
-        studentId: studentIdentifier,
+        studentId,
         createdAt: now,
         updatedAt: now
       });
 
-      const studentRef = admin.firestore().doc(`users/${uid}/students/${studentIdentifier}`);
+      const studentRef = admin.firestore().doc(`users/${uid}/students/${studentId}`);
       batch.set(
         studentRef,
         {
@@ -670,7 +718,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           lastSheetRow: row.row ?? null,
           updatedAt: now,
           uploads: admin.firestore.FieldValue.increment(1),
-          studentId: studentIdentifier,
+          studentId,
           ...(row.data.period !== null
             ? { periodHistory: admin.firestore.FieldValue.arrayUnion(row.data.period) }
             : {}),
@@ -690,10 +738,9 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         sheetRow: row.row ?? null,
         uploadId,
         createdAt: now,
-        studentId: studentIdentifier
+        studentId
       });
 
-      (row as any).studentId = studentIdentifier;
       written++;
     });
     skipped = reviewed.length - written;
