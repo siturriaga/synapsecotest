@@ -46,7 +46,7 @@ export type LatestGroupingRun = {
 function toGroup(doc: any, id: string): WorkspaceGroup {
   const rawStudents = Array.isArray(doc?.students) ? doc.students : []
   const students: WorkspaceGroupStudent[] = rawStudents
-    .map((student, index) => {
+    .map((student: unknown, index: number) => {
       if (!student || typeof student !== 'object') {
         return null
       }
@@ -71,7 +71,7 @@ function toGroup(doc: any, id: string): WorkspaceGroup {
             : null
       }
     })
-    .filter((student): student is WorkspaceGroupStudent => Boolean(student))
+    .filter((student: WorkspaceGroupStudent | null): student is WorkspaceGroupStudent => Boolean(student))
 
   return {
     id,
