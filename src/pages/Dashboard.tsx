@@ -208,8 +208,24 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       } else {
         setLatestAssessment(null)
       }
-      if (typeof data.groupCount === 'number') {
-        cards.push({ id: 'groups', label: 'Active Groups', value: data.groupCount ?? 0, delta: data.groupDelta ?? undefined })
+      const aiGroupCount = typeof data.aiGroupCount === 'number' ? data.aiGroupCount : null
+      const rosterGroupCount =
+        typeof data.rosterGroupCount === 'number'
+          ? data.rosterGroupCount
+          : typeof data.groupCount === 'number'
+          ? data.groupCount
+          : null
+      const groupDelta =
+        typeof data.aiGroupDelta === 'number'
+          ? data.aiGroupDelta
+          : typeof data.rosterGroupDelta === 'number'
+          ? data.rosterGroupDelta
+          : typeof data.groupDelta === 'number'
+          ? data.groupDelta
+          : undefined
+      const totalGroups = aiGroupCount ?? rosterGroupCount
+      if (typeof totalGroups === 'number') {
+        cards.push({ id: 'groups', label: 'Active Groups', value: totalGroups, delta: groupDelta })
       }
       if (typeof data.onTrack === 'number') {
         cards.push({ id: 'on-track', label: 'On Track', value: data.onTrack ?? 0, delta: data.onTrackDelta ?? undefined })

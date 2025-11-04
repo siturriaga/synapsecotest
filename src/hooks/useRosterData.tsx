@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import {
   collection,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -214,7 +215,6 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       setStudents([])
       setUploads([])
       setLoading(false)
-      payloadRef.current = null
       hasPendingSync.current = false
       setSyncStatus('idle')
       setSyncError(null)
@@ -469,69 +469,129 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         recordedAt: record.createdAt ? record.createdAt.toISOString() : null
       }))
 
-      await setDoc(
-        docRef,
-        {
-          lastClientSyncAt: nowIso,
-          updatedAt: serverTimestamp(),
-          stats: {
-            totalAssessments: snapshotRecords.length,
-            totalSummaries: snapshotSummaries.length,
-            totalStudents: snapshotStudents.length
+      const metricsRef = doc(db, `users/${user.uid}/dashboard_stats/metrics`)
+      const metricsSnap = await getDoc(metricsRef)
+      const previousRosterGroupCount = metricsSnap.exists()
+        ? Number(metricsSnap.data()?.rosterGroupCount ?? metricsSnap.data()?.groupCount ?? 0)
+        : 0
+      const foundationGroup = snapshotGroups.find((group) => group.id === 'foundation')
+      const nonFoundationCount = snapshotGroups
+        .filter((group) => group.id !== 'foundation')
+        .reduce((total, group) => total + group.studentCount, 0)
+
+      const isAssessmentEntry = (
+        entry: SavedAssessment | StudentRosterRecord
+      ): entry is SavedAssessment => (entry as SavedAssessment).score !== undefined
+
+      const recentRosterEntries = (snapshotRecords.length ? snapshotRecords : snapshotStudents)
+        .slice(0, 20)
+        .map((entry) => {
+          if (isAssessmentEntry(entry)) {
+            return {
+              name: entry.displayName,
+              score: entry.score,
+              testName: entry.testName,
+              period: entry.period,
+              quarter: entry.quarter,
+              sheetRow: entry.sheetRow ?? null,
+              uploadedAt: entry.createdAt ? entry.createdAt.toISOString() : null
+            }
+          }
+
+          return {
+            name: entry.displayName,
+            score: entry.lastScore ?? null,
+            testName: entry.lastAssessment ?? null,
+            period: entry.period ?? null,
+            quarter: entry.quarter ?? null,
+            sheetRow: entry.lastSheetRow ?? null,
+            uploadedAt: entry.updatedAt ? entry.updatedAt.toISOString() : null
+          }
+        })
+
+      await Promise.all([
+        setDoc(
+          docRef,
+          {
+            lastClientSyncAt: nowIso,
+            updatedAt: serverTimestamp(),
+            stats: {
+              totalAssessments: snapshotRecords.length,
+              totalSummaries: snapshotSummaries.length,
+              totalStudents: snapshotStudents.length
+            },
+            latestAssessment: snapshotSummaries[0]
+              ? {
+                  id: snapshotSummaries[0].id,
+                  testName: snapshotSummaries[0].testName,
+                  period: snapshotSummaries[0].period,
+                  quarter: snapshotSummaries[0].quarter,
+                  studentCount: snapshotSummaries[0].studentCount,
+                  averageScore: snapshotSummaries[0].averageScore,
+                  maxScore: snapshotSummaries[0].maxScore,
+                  minScore: snapshotSummaries[0].minScore,
+                  updatedAt: snapshotSummaries[0].updatedAt
+                    ? snapshotSummaries[0].updatedAt.toISOString()
+                    : null
+                }
+              : null,
+            highlights: {
+              topStudents: top,
+              needsSupport: bottom
+            },
+            groupInsights: snapshotGroups.map((group) => ({
+              id: group.id,
+              label: group.label,
+              range: group.range,
+              studentCount: group.studentCount,
+              recommendedPractices: group.recommendedPractices,
+              students: group.students.map((student) => ({
+                name: student.name,
+                score: student.score,
+                testName: student.testName,
+                period: student.period,
+                quarter: student.quarter,
+                recordedAt: student.recordedAt ? student.recordedAt.toISOString() : null
+              }))
+            })),
+            pedagogy: snapshotPedagogy
+              ? {
+                  summary: snapshotPedagogy.summary,
+                  bestPractices: snapshotPedagogy.bestPractices,
+                  reflectionPrompts: snapshotPedagogy.reflectionPrompts
+                }
+              : null,
+            recentStudents: recentRosterEntries
           },
-          latestAssessment: snapshotSummaries[0]
-            ? {
-                id: snapshotSummaries[0].id,
-                testName: snapshotSummaries[0].testName,
-                period: snapshotSummaries[0].period,
-                quarter: snapshotSummaries[0].quarter,
-                studentCount: snapshotSummaries[0].studentCount,
-                averageScore: snapshotSummaries[0].averageScore,
-                maxScore: snapshotSummaries[0].maxScore,
-                minScore: snapshotSummaries[0].minScore,
-                updatedAt: snapshotSummaries[0].updatedAt
-                  ? snapshotSummaries[0].updatedAt.toISOString()
-                  : null
-              }
-            : null,
-          highlights: {
-            topStudents: top,
-            needsSupport: bottom
+          { merge: true }
+        ),
+        setDoc(
+          metricsRef,
+          {
+            totalEnrollment: snapshotStudents.length,
+            lastClientSyncAt: nowIso,
+            rosterGroupCount: snapshotGroups.length,
+            rosterGroupDelta: snapshotGroups.length - previousRosterGroupCount,
+            onTrack: nonFoundationCount,
+            atRisk: foundationGroup?.studentCount ?? 0,
+            latestAssessment: snapshotSummaries[0]
+              ? {
+                  testName: snapshotSummaries[0].testName,
+                  period: snapshotSummaries[0].period,
+                  quarter: snapshotSummaries[0].quarter,
+                  studentCount: snapshotSummaries[0].studentCount,
+                  averageScore: snapshotSummaries[0].averageScore,
+                  maxScore: snapshotSummaries[0].maxScore,
+                  minScore: snapshotSummaries[0].minScore,
+                  updatedAt: snapshotSummaries[0].updatedAt
+                    ? snapshotSummaries[0].updatedAt.toISOString()
+                    : null
+                }
+              : null
           },
-          groupInsights: snapshotGroups.map((group) => ({
-            id: group.id,
-            label: group.label,
-            range: group.range,
-            studentCount: group.studentCount,
-            recommendedPractices: group.recommendedPractices,
-            students: group.students.map((student) => ({
-              name: student.name,
-              score: student.score,
-              testName: student.testName,
-              period: student.period,
-              quarter: student.quarter,
-              recordedAt: student.recordedAt ? student.recordedAt.toISOString() : null
-            }))
-          })),
-          pedagogy: snapshotPedagogy
-            ? {
-                summary: snapshotPedagogy.summary,
-                bestPractices: snapshotPedagogy.bestPractices,
-                reflectionPrompts: snapshotPedagogy.reflectionPrompts
-              }
-            : null,
-          recentStudents: snapshotRecords.slice(0, 20).map((record) => ({
-            name: record.displayName,
-            score: record.score,
-            testName: record.testName,
-            period: record.period,
-            quarter: record.quarter,
-            sheetRow: record.sheetRow ?? null,
-            uploadedAt: record.createdAt ? record.createdAt.toISOString() : null
-          }))
-        },
-        { merge: true }
-      )
+          { merge: true }
+        )
+      ])
 
       hasPendingSync.current = false
       setSyncStatus('idle')
