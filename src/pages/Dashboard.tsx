@@ -53,6 +53,21 @@ type AssessmentSnapshot = {
   updatedAt?: Date | null
 }
 
+function formatDeltaValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const formatted = value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+    if (value > 0) {
+      return `+${formatted}`
+    }
+    return formatted
+  }
+  return undefined
+}
+
 export default function DashboardPage({ user, loading }: DashboardProps) {
   const [stats, setStats] = useState<StatCard[]>([])
   const [pulses, setPulses] = useState<Pulse[]>([])
@@ -287,13 +302,28 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           : undefined
       const totalGroups = aiGroupCount ?? rosterGroupCount
       if (typeof totalGroups === 'number') {
-        cards.push({ id: 'groups', label: 'Active Groups', value: totalGroups, delta: groupDelta })
+        cards.push({
+          id: 'groups',
+          label: 'Active Groups',
+          value: totalGroups,
+          delta: formatDeltaValue(groupDelta)
+        })
       }
       if (typeof data.onTrack === 'number') {
-        cards.push({ id: 'on-track', label: 'On Track', value: data.onTrack ?? 0, delta: data.onTrackDelta ?? undefined })
+        cards.push({
+          id: 'on-track',
+          label: 'On Track',
+          value: data.onTrack ?? 0,
+          delta: formatDeltaValue(data.onTrackDelta)
+        })
       }
       if (typeof data.atRisk === 'number') {
-        cards.push({ id: 'at-risk', label: 'Needs Support', value: data.atRisk ?? 0, delta: data.atRiskDelta ?? undefined })
+        cards.push({
+          id: 'at-risk',
+          label: 'Needs Support',
+          value: data.atRisk ?? 0,
+          delta: formatDeltaValue(data.atRiskDelta)
+        })
       }
       if (cards.length === 0) {
         cards.push({ id: 'placeholder', label: 'Data incoming', value: 0, displayValue: '—' })
