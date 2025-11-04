@@ -67,7 +67,7 @@ function percentage(count: number, total: number) {
 }
 
 function formatAverage(value: number | null) {
-  if (value === null || Number.isNaN(value)) return '—'
+  if (value === null || Number.isNaN(value)) return 'N/A'
   const rounded = Number(value.toFixed(1))
   return Number.isInteger(rounded) ? `${Math.round(rounded)}%` : `${rounded.toFixed(1)}%`
 }
@@ -79,9 +79,21 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
     return (
       <section className="glass-card" style={{ display: 'grid', gap: 16 }}>
         <div className="badge">Proficiency distribution</div>
-        <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-          Upload a roster to unlock real-time proficiency tracking across all classes and individual students.
-        </p>
+        <article
+          className="glass-subcard"
+          style={{
+            border: '1px solid rgba(148,163,184,0.25)',
+            borderRadius: 16,
+            padding: 18,
+            background: 'rgba(15,23,42,0.55)'
+          }}
+        >
+          <strong style={{ fontSize: 18, display: 'block', marginBottom: 6 }}>Mastery data</strong>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+            Proficiency metrics are currently N/A. Upload data when you have it, but your workflow stays flexible in the
+            meantime.
+          </p>
+        </article>
       </section>
     )
   }
@@ -104,6 +116,9 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
           if (!summary) return null
           const insightParts: string[] = []
           const masteryPercent = percentage(summary.counts.mastered + summary.counts.onGrade, summary.scoredLearners)
+          const scoredDisplay = summary.scoredLearners > 0 ? summary.scoredLearners : 'N/A'
+          const totalDisplay = summary.totalLearners > 0 ? summary.totalLearners : 'N/A'
+          const hasScoredLearners = summary.scoredLearners > 0
           if (summary.scoredLearners) {
             if (masteryPercent >= 80) {
               insightParts.push('Strong mastery trend — celebrate and extend learning!')
@@ -141,8 +156,8 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Average proficiency</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 24, fontWeight: 700 }}>{summary.scoredLearners}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Scored / {summary.totalLearners}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700 }}>{scoredDisplay}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Scored / {totalDisplay}</div>
                 </div>
                 {scope.latestScore !== undefined && scope.latestScore !== null && (
                   <div>
@@ -162,8 +177,14 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
                           {level.label} · {level.description}
                         </span>
                         <span>
-                          {count}
-                          {summary.scoredLearners ? ` · ${percent}%` : ''}
+                          {hasScoredLearners ? (
+                            <>
+                              {count}
+                              {` · ${percent}%`}
+                            </>
+                          ) : (
+                            'N/A'
+                          )}
                         </span>
                       </div>
                       <div
@@ -201,7 +222,6 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
 
 export function buildMasterySummary(scores: Array<number | null | undefined>): MasterySummary | null {
   const totalLearners = scores.length
-  if (!totalLearners) return null
   const counts: Record<MasteryTier, number> = {
     approaching: 0,
     developing: 0,

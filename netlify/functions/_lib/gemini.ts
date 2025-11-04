@@ -1,18 +1,21 @@
 import { getAdmin } from './firebaseAdmin'
 
+type ResponseMimeField = 'responseMimeType' | 'response_mime_type'
+
+type GeminiGenerationConfig = {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxOutputTokens?: number
+} & Partial<Record<ResponseMimeField, string>>
+
 type GeminiPayload = {
   contents: Array<{
     role: 'user'
     parts: Array<{ text: string }>
   }>
   safetySettings?: any
-  generationConfig?: {
-    temperature?: number
-    topP?: number
-    topK?: number
-    maxOutputTokens?: number
-    responseMimeType?: string
-  }
+  generationConfig?: GeminiGenerationConfig
 }
 
 const DEFAULT_MODELS = [
@@ -26,6 +29,8 @@ const DEFAULT_MODELS = [
 ]
 
 const DEFAULT_API_VERSION = 'v1'
+
+const RESPONSE_MIME_FIELD_CANDIDATES: ResponseMimeField[] = ['responseMimeType', 'response_mime_type']
 
 async function generateWithModel(
   model: string,
@@ -50,44 +55,65 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
   const preferred = process.env.GEMINI_MODEL?.trim()
   const models = [...new Set([preferred, ...DEFAULT_MODELS].filter(Boolean))] as string[]
 
-  const payload: GeminiPayload = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: prompt }]
+  let overallError: string | null = null
+
+  for (const responseField of RESPONSE_MIME_FIELD_CANDIDATES) {
+    const payload: GeminiPayload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ],
+      generationConfig: {
+        temperature
       }
-    ],
-    generationConfig: {
-      temperature,
-      responseMimeType: 'application/json'
     }
-  }
 
-  let lastError: string | null = null
+    if (payload.generationConfig) {
+      ;(payload.generationConfig as Record<ResponseMimeField, string>)[responseField] = 'application/json'
+    }
 
-  for (const model of models) {
-    const res = await generateWithModel(model, apiKey, payload)
-    if (!res.ok) {
-      const text = await res.text()
-      lastError = `Gemini error ${res.status}: ${text}`
-      if (res.status === 404 || res.status === 400) {
-        // Some models are not available in all regions/api versions; try the next one.
+    let lastError: string | null = null
+    let sawUnknownField = false
+
+    for (const model of models) {
+      const res = await generateWithModel(model, apiKey, payload)
+      if (!res.ok) {
+        const text = await res.text()
+        lastError = `Gemini error ${res.status}: ${text}`
+        if (res.status === 400 && text.includes('Unknown name') && text.includes(`"${responseField}"`)) {
+          sawUnknownField = true
+          break
+        }
+        if (res.status === 404 || res.status === 400) {
+          // Some models are not available in all regions/API versions; try the next one.
+          continue
+        }
+        throw new Error(lastError)
+      }
+
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!text) {
+        lastError = 'Gemini returned no text'
         continue
       }
-      throw new Error(lastError)
+      await log(uid, title, text, model)
+      return text
     }
 
-    const data = await res.json()
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!text) {
-      lastError = 'Gemini returned no text'
+    if (sawUnknownField) {
+      overallError = lastError ?? overallError
       continue
     }
-    await log(uid, title, text, model)
-    return text
+
+    if (lastError) {
+      overallError = lastError
+    }
   }
 
-  throw new Error(lastError || 'Unable to reach Gemini')
+  throw new Error(overallError || 'Unable to reach Gemini')
 }
 
 async function log(uid: string, title: string, detail: string, model: string) {
