@@ -34,7 +34,7 @@ interface RosterDataContextValue {
   syncStatus: 'idle' | 'saving' | 'error'
   syncError: string | null
   lastSyncedAt: Date | null
-  triggerSync: () => Promise<void>
+  triggerSync: () => Promise<boolean>
 }
 
 interface RosterDataProviderProps {
@@ -192,7 +192,7 @@ const RosterDataContext = createContext<RosterDataContextValue>({
   syncStatus: 'idle',
   syncError: null,
   lastSyncedAt: null,
-  triggerSync: async () => {}
+  triggerSync: async () => false
 })
 
 export function RosterDataProvider({ user, children }: RosterDataProviderProps) {
@@ -421,8 +421,13 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     }
   }, [records, summaries])
 
-  const saveSnapshot = useCallback(async () => {
-    if (!user || savingRef.current) return
+  const saveSnapshot = useCallback(async (): Promise<boolean> => {
+    if (!user) return false
+
+    if (savingRef.current) {
+      hasPendingSync.current = true
+      return true
+    }
 
     const snapshotRecords = records
     const snapshotSummaries = summaries
@@ -438,7 +443,8 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
 
     if (!hasData) {
       hasPendingSync.current = false
-      return
+      setSyncStatus('idle')
+      return true
     }
 
     savingRef.current = true
@@ -596,11 +602,13 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       hasPendingSync.current = false
       setSyncStatus('idle')
       setLastSyncedAt(new Date())
+      return true
     } catch (error: any) {
       console.error('Failed to sync roster snapshot', error)
       setSyncStatus('error')
       setSyncError(error?.message ?? 'Unable to sync roster snapshot')
       hasPendingSync.current = true
+      return false
     } finally {
       savingRef.current = false
     }
@@ -653,9 +661,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       syncStatus,
       syncError,
       lastSyncedAt,
-      triggerSync: async () => {
-        await saveSnapshot()
-      }
+      triggerSync: async () => saveSnapshot()
     }),
     [
       loading,

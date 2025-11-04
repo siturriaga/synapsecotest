@@ -1,26 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { auth, db } from '../firebase'
+import { auth } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
 import type { SavedRosterUpload } from '../types/roster'
 
 interface RosterPageProps {
   user: User | null
-}
-
-type PreviewRow = {
-  row: number
-  status: 'ok' | 'needs_review'
-  data: {
-    displayName: string | null
-    nameVariants: string[]
-    period: number | null
-    quarter: string | null
-    score: number | null
-    testName: string | null
-  }
-  issues?: string[]
 }
 
 type AssessmentSummary = {
@@ -31,25 +17,11 @@ type AssessmentSummary = {
   max: number | null
 }
 
-type PreviewResponse = {
-  rows: PreviewRow[]
-  stats: { total: number; ok: number; needs_review: number }
-  assessmentSummary: AssessmentSummary
-}
-
 type CommitResponse = {
   written: number
   skipped: number
   collection: string
   assessmentSummary: AssessmentSummary
-}
-
-type RowOverride = {
-  displayName?: string
-  period?: string
-  quarter?: string
-  score?: string
-  testName?: string
 }
 
 function formatSize(bytes: number | null) {
@@ -76,15 +48,11 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   const [period, setPeriod] = useState('')
   const [quarter, setQuarter] = useState('')
   const [testName, setTestName] = useState('')
-  const [preview, setPreview] = useState<PreviewResponse | null>(null)
-  const [uploadId, setUploadId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [overrides, setOverrides] = useState<Record<number, RowOverride>>({})
-  const [overrideDirty, setOverrideDirty] = useState(false)
-  const [autoCommitRequested, setAutoCommitRequested] = useState(false)
   const autoIntentRef = useRef<'update' | 'new' | undefined>()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const {
     loading: rosterLoading,
     records,
@@ -98,25 +66,6 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     lastSyncedAt,
     triggerSync
   } = useRosterData()
-
-  const summary = useMemo(() => preview?.assessmentSummary, [preview])
-  const previewDetails = useMemo(() => {
-    if (!preview) {
-      return {
-        testName: testName.trim() || null,
-        period: period ? Number(period) : null,
-        quarter: quarter || null
-      }
-    }
-    const test = preview.rows.find((row) => row.data.testName)
-    const periodRow = preview.rows.find((row) => row.data.period !== null)
-    const quarterRow = preview.rows.find((row) => row.data.quarter)
-    return {
-      testName: (test?.data.testName || testName || '').trim() || null,
-      period: periodRow?.data.period ?? (period ? Number(period) : null),
-      quarter: quarterRow?.data.quarter ?? (quarter || null)
-    }
-  }, [preview, testName, period, quarter])
 
   const autoSaveStatus = useMemo(() => {
     if (syncStatus === 'saving') return 'Saving workspace snapshot…'
@@ -159,64 +108,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     }
   }, [])
 
-  const buildManualOverrides = useCallback(() => {
-    const payload: Record<number, any> = {}
-    Object.entries(overrides).forEach(([key, fields]) => {
-      const rowNumber = Number(key)
-      if (!Number.isFinite(rowNumber)) return
-      const entry: Record<string, any> = {}
-      if (Object.prototype.hasOwnProperty.call(fields, 'displayName')) {
-        const value = fields.displayName?.trim() ?? ''
-        entry.displayName = value ? value : null
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'period')) {
-        const trimmed = fields.period?.trim() ?? ''
-        if (!trimmed) {
-          entry.period = null
-        } else {
-          const numeric = Number(trimmed)
-          entry.period = Number.isFinite(numeric) ? numeric : null
-        }
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'quarter')) {
-        const trimmed = fields.quarter?.trim() ?? ''
-        entry.quarter = trimmed ? trimmed.toUpperCase() : null
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'score')) {
-        const trimmed = fields.score?.trim() ?? ''
-        if (!trimmed) {
-          entry.score = null
-        } else {
-          const numeric = Number(trimmed)
-          entry.score = Number.isFinite(numeric) ? numeric : null
-        }
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'testName')) {
-        const value = fields.testName?.trim() ?? ''
-        entry.testName = value ? value : null
-      }
-      if (Object.keys(entry).length > 0) {
-        payload[rowNumber] = entry
-      }
-    })
-    return payload
-  }, [overrides])
-
-  const updateOverride = useCallback((rowNumber: number, field: keyof RowOverride, value: string) => {
-    setOverrides((prev) => {
-      const nextRow = { ...(prev[rowNumber] ?? {}), [field]: value }
-      const next = { ...prev, [rowNumber]: nextRow }
-      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
-      setOverrideDirty(hasValues)
-      return next
-    })
-  }, [])
-
-  const uploadFile = useCallback(
-    async (
-      mode: 'preview' | 'commit',
-      intent?: 'update' | 'new'
-    ): Promise<PreviewResponse | CommitResponse | null> => {
+  const commitRoster = useCallback(
+    async (intent?: 'update' | 'new'): Promise<CommitResponse | null> => {
       if (!user || !file) {
         setError('Select a file and ensure you are signed in.')
         return null
@@ -225,67 +118,65 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       try {
         setLoading(true)
         setError(null)
-        setStatus(
-          mode === 'preview'
-            ? 'Analysing roster upload…'
-            : 'Publishing roster to your secure workspace…'
-        )
+        setStatus('Publishing roster to your secure workspace…')
 
-        let id = uploadId
-        if (!id) {
-          const token = await auth.currentUser?.getIdToken()
-          const form = new FormData()
-          form.append('file', file)
-          const res = await fetch(
-            `/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`,
-            {
-              method: 'POST',
-              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-              body: form
-            }
-          )
-          if (!res.ok) {
-            throw new Error(await res.text())
+        const token = await auth.currentUser?.getIdToken()
+        const form = new FormData()
+        form.append('file', file)
+        const uploadResponse = await fetch(
+          `/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`,
+          {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: form
           }
-          const data = await res.json()
-          id = data.uploadId
-          setUploadId(id)
+        )
+        if (!uploadResponse.ok) {
+          throw new Error(await uploadResponse.text())
         }
+        const { uploadId } = await uploadResponse.json()
 
-        const response = await safeFetch<PreviewResponse | CommitResponse>(
+        const commit = await safeFetch<CommitResponse>(
           '/.netlify/functions/processRoster',
           {
             method: 'POST',
             body: JSON.stringify({
-              uploadId: id,
-              mode,
-              manualOverrides: buildManualOverrides(),
+              uploadId,
+              mode: 'commit',
+              manualOverrides: {},
               intent
             })
           }
         )
 
-        if (mode === 'preview') {
-          setPreview(response as PreviewResponse)
-          setStatus('Analysis complete — syncing to dashboard shortly…')
-          setOverrideDirty(false)
-          return response as PreviewResponse
-        } else {
-          const commit = response as CommitResponse
-          const averageText =
-            commit.assessmentSummary.average !== null
-              ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.`
-              : ''
-          setStatus(`Auto-sync complete: ${commit.written} learners updated. Skipped ${commit.skipped}.${averageText}`)
-          setOverrides({})
-          setOverrideDirty(false)
-          try {
-            await triggerSync()
-          } catch (syncErr) {
-            console.error('Unable to force roster snapshot sync', syncErr)
-          }
-          return commit
+        const averageText =
+          commit.assessmentSummary.average !== null
+            ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.`
+            : ''
+        setStatus('Roster committed — refreshing workspace snapshot…')
+
+        let syncSucceeded = true
+        try {
+          syncSucceeded = await triggerSync()
+        } catch (syncErr) {
+          console.error('Unable to force roster snapshot sync', syncErr)
+          syncSucceeded = false
         }
+
+        if (syncSucceeded) {
+          setStatus(`Auto-sync complete: ${commit.written} learners updated. Skipped ${commit.skipped}.${averageText}`)
+          setFile(null)
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+        } else {
+          setStatus(
+            `Roster committed, but the workspace snapshot did not refresh automatically. Use “Sync now” to retry.${averageText}`
+          )
+          setError('Roster saved, but the workspace snapshot did not refresh. Use “Sync now” to retry.')
+        }
+
+        return commit
       } catch (err: any) {
         console.error(err)
         setError(err?.message ?? 'Upload failed.')
@@ -294,88 +185,25 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setLoading(false)
       }
     },
-    [
-      user,
-      file,
-      uploadId,
-      period,
-      quarter,
-      testName,
-      buildManualOverrides,
-      triggerSync
-    ]
+    [user, file, period, quarter, testName, triggerSync]
   )
 
-  const runAnalysis = useCallback(() => {
+  const handleSubmit = useCallback(() => {
     if (!file || loading) {
       return
     }
-    setAutoCommitRequested(true)
-    void uploadFile('preview')
-  }, [file, loading, uploadFile])
 
-  const resetOverride = useCallback((rowNumber: number) => {
-    setOverrides((prev) => {
-      if (!prev[rowNumber]) return prev
-      const next = { ...prev }
-      delete next[rowNumber]
-      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
-      setOverrideDirty(hasValues)
-      return next
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!file || loading) return
-    const handle = setTimeout(() => {
-      runAnalysis()
-    }, 400)
-    return () => clearTimeout(handle)
-  }, [file, period, quarter, testName, loading, runAnalysis])
-
-  useEffect(() => {
-    if (!overrideDirty || !file || loading) return
-    const handle = setTimeout(() => {
-      runAnalysis()
-    }, 600)
-    return () => clearTimeout(handle)
-  }, [overrideDirty, file, loading, runAnalysis])
-
-  useEffect(() => {
-    if (!autoCommitRequested) return
-    if (!preview || loading) return
-
-    let cancelled = false
-
-    const proceed = async () => {
-      if (preview.stats.needs_review > 0) {
-        setStatus('Auto-sync continuing — unresolved fields will be stored as N/A.')
-      }
-
-      let intent = autoIntentRef.current
-      if (!testName.trim() && !intent) {
-        const wantsUpdate = window.confirm(
-          'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
-        )
-        intent = wantsUpdate ? 'update' : 'new'
-        autoIntentRef.current = intent
-      }
-
-      try {
-        await uploadFile('commit', intent)
-      } finally {
-        if (!cancelled) {
-          setAutoCommitRequested(false)
-        }
-      }
+    let intent = autoIntentRef.current
+    if (!testName.trim() && !intent) {
+      const wantsUpdate = window.confirm(
+        'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
+      )
+      intent = wantsUpdate ? 'update' : 'new'
+      autoIntentRef.current = intent
     }
 
-    void proceed()
-
-    return () => {
-      cancelled = true
-    }
-  }, [autoCommitRequested, preview, loading, testName, uploadFile])
+    void commitRoster(intent)
+  }, [file, loading, testName, commitRoster])
 
   if (!user) {
     return (
@@ -392,19 +220,21 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
         <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and refine them in place</h2>
+        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and sync to your dashboard</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Drop in your export, edit names, periods, scores, or test titles directly in the table, then preview before saving.
+          Drop in your export, add optional context, and we will publish it directly to your dashboard and teaching tools—no
+          preview step required.
         </p>
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            runAnalysis()
+            handleSubmit()
           }}
         >
           <div className="field">
             <label htmlFor="roster-file">Choose roster file</label>
             <input
+              ref={fileInputRef}
               id="roster-file"
               name="roster-file"
               type="file"
@@ -412,11 +242,6 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               onChange={(event) => {
                 const nextFile = event.target.files?.[0] ?? null
                 setFile(nextFile)
-                setUploadId(null)
-                setPreview(null)
-                setOverrides({})
-                setOverrideDirty(false)
-                setAutoCommitRequested(false)
                 setStatus('')
                 setError(null)
               }}
@@ -467,7 +292,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
             <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Run auto-sync now'}
+              {loading ? 'Publishing…' : 'Publish to dashboard'}
             </button>
           </div>
         </form>
@@ -508,169 +333,6 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </button>
         </div>
       </section>
-
-      {preview && (
-        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Preview results</h3>
-              <p style={{ color: 'var(--text-muted)' }}>
-                {preview.stats.ok} learners ready • {preview.stats.needs_review} need attention.
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
-              <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
-                <strong>Test details</strong>
-                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
-                  <span>Assessment: {previewDetails.testName ?? '—'}</span>
-                  <span>Period: {previewDetails.period ?? '—'} · Quarter: {previewDetails.quarter ?? '—'}</span>
-                </div>
-              </div>
-              {summary && (
-                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,23,42,0.55)', minWidth: 220 }}>
-                  <strong>Assessment snapshot</strong>
-                  <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 14 }}>
-                    <span>Average: {summary.average !== null ? summary.average.toFixed(1) : '—'}</span>
-                    <span>Median: {summary.median !== null ? summary.median.toFixed(1) : '—'}</span>
-                    <span>High: {summary.max !== null ? summary.max.toFixed(1) : '—'} · Low: {summary.min !== null ? summary.min.toFixed(1) : '—'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 12,
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
-            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-              Auto-sync keeps your dashboard, groups, and assignments updated instantly.
-            </span>
-            <button type="button" className="secondary" onClick={runAnalysis} disabled={loading}>
-              {loading ? 'Processing…' : 'Re-run sync'}
-            </button>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Row</th>
-                <th>Student</th>
-                <th>Period</th>
-                <th>Quarter</th>
-                <th>Score</th>
-                <th>Assessment</th>
-                <th>Status</th>
-                <th>Manual</th>
-              </tr>
-            </thead>
-            <tbody>
-              {preview.rows.map((row) => {
-                const rowOverride = overrides[row.row] ?? {}
-                const hasOverride = !!rowOverride && Object.keys(rowOverride).length > 0
-                const studentValue = rowOverride.displayName ?? row.data.displayName ?? ''
-                const periodValue = rowOverride.period ?? (row.data.period !== null ? String(row.data.period) : '')
-                const quarterValue = rowOverride.quarter ?? (row.data.quarter ?? '')
-                const scoreValue = rowOverride.score ?? (row.data.score !== null ? String(row.data.score) : '')
-                const testValue = rowOverride.testName ?? row.data.testName ?? testName ?? ''
-                return (
-                  <tr key={row.row}>
-                    <td>{row.row}</td>
-                    <td>
-                      <input
-                        className="table-input"
-                        value={studentValue}
-                        onChange={(event) => updateOverride(row.row, 'displayName', event.target.value)}
-                        placeholder="Student name"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="table-input"
-                        type="number"
-                        min={1}
-                        max={8}
-                        value={periodValue}
-                        onChange={(event) => updateOverride(row.row, 'period', event.target.value)}
-                        placeholder="—"
-                      />
-                    </td>
-                    <td>
-                      <select
-                        className="table-input"
-                        value={quarterValue}
-                        onChange={(event) => updateOverride(row.row, 'quarter', event.target.value)}
-                      >
-                        <option value="">—</option>
-                        <option value="Q1">Q1</option>
-                        <option value="Q2">Q2</option>
-                        <option value="Q3">Q3</option>
-                        <option value="Q4">Q4</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        className="table-input"
-                        type="number"
-                        step="0.1"
-                        value={scoreValue}
-                        onChange={(event) => updateOverride(row.row, 'score', event.target.value)}
-                        placeholder="—"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="table-input"
-                        value={testValue}
-                        onChange={(event) => updateOverride(row.row, 'testName', event.target.value)}
-                        placeholder="Assessment name"
-                      />
-                    </td>
-                    <td>
-                      {row.status === 'ok' ? (
-                        <span className="status-success">Validated</span>
-                      ) : (
-                        <span className="status-warning">Check: {row.issues?.join(', ')}</span>
-                      )}
-                    </td>
-                    <td>
-                      {hasOverride ? (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => resetOverride(row.row)}
-                        >
-                          Reset
-                        </button>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {overrideDirty && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: '12px 16px',
-                borderRadius: 12,
-                border: '1px solid rgba(251,191,36,0.45)',
-                background: 'rgba(251,191,36,0.12)',
-                color: '#facc15',
-                fontSize: 13
-              }}
-            >
-              Manual edits pending — run Preview again to validate before committing.
-            </div>
-          )}
-        </section>
-      )}
 
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -849,8 +511,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         </header>
         {uploads.length === 0 ? (
           <div style={{ color: 'var(--text-muted)' }}>
-            Every roster you preview or commit is stored securely. Download a prior CSV, reuse it for corrections, or confirm
-            what was shared with Gemini planning.
+            Every roster you publish is stored securely. Download a prior CSV, reuse it for corrections, or confirm what was
+            shared with Gemini planning.
           </div>
         ) : (
           <table className="table">
