@@ -4,6 +4,12 @@ import type { User } from 'firebase/auth'
 import { db } from '../firebase'
 import { DynamicWelcome } from '../components/core/DynamicWelcome'
 import { DashboardCards, type StatCard } from '../components/core/DashboardCards'
+import {
+  MasteryDistribution,
+  buildMasterySummary,
+  computeTrendDelta,
+  type MasteryScope
+} from '../components/dashboard/MasteryDistribution'
 import { useRosterData } from '../hooks/useRosterData'
 
 interface DashboardProps {
@@ -63,6 +69,16 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
   } = useRosterData()
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all')
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
+  const classStudents = useMemo(() => {
+    if (selectedPeriod === 'all') return rosterStudents
+    return rosterStudents.filter((student) => String(student.period ?? '') === selectedPeriod)
+  }, [rosterStudents, selectedPeriod])
+
+  const allScores = useMemo(() => rosterStudents.map((student) => student.lastScore), [rosterStudents])
+  const classScores = useMemo(() => classStudents.map((student) => student.lastScore), [classStudents])
+
+  const allMastery = useMemo(() => buildMasterySummary(allScores), [allScores])
+  const classMastery = useMemo(() => buildMasterySummary(classScores), [classScores])
 
   useEffect(() => {
     if (!selectedStudentId && rosterStudents.length) {
@@ -174,6 +190,52 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
     const recent = studentHistory.slice(0, 3)
     return { average, latest, recent }
   }, [studentHistory, selectedStudent])
+
+  const studentScores = useMemo(() => {
+    if (!selectedStudent) return []
+    if (studentHistory.length) {
+      return studentHistory.map((entry) => (typeof entry.score === 'number' ? entry.score : null))
+    }
+    return [selectedStudent.lastScore ?? null]
+  }, [selectedStudent, studentHistory])
+
+  const studentMastery = useMemo(() => buildMasterySummary(studentScores), [studentScores])
+  const studentTrendDelta = useMemo(() => computeTrendDelta(studentHistory), [studentHistory])
+
+  const masteryScopes = useMemo<MasteryScope[]>(() => {
+    const scopes: MasteryScope[] = []
+    if (allMastery) {
+      scopes.push({
+        id: 'all',
+        title: 'All classes',
+        subtitle: `Latest data across ${allMastery.totalLearners} learners`,
+        summary: allMastery
+      })
+    }
+    if (classMastery) {
+      const isAll = selectedPeriod === 'all'
+      scopes.push({
+        id: 'class',
+        title: isAll ? 'Class overview' : `Period ${selectedPeriod}`,
+        subtitle: isAll
+          ? 'Combined view of every active class'
+          : `Focused on learners rostered in period ${selectedPeriod}`,
+        summary: classMastery
+      })
+    }
+    if (selectedStudent && studentMastery) {
+      scopes.push({
+        id: 'student',
+        title: selectedStudent.displayName,
+        subtitle: 'Individual trajectory',
+        summary: studentMastery,
+        latestScore: typeof selectedStudent.lastScore === 'number' ? selectedStudent.lastScore : undefined,
+        latestAssessment: selectedStudent.lastAssessment ?? undefined,
+        trendDelta: studentTrendDelta ?? undefined
+      })
+    }
+    return scopes
+  }, [allMastery, classMastery, selectedPeriod, selectedStudent, studentMastery, studentTrendDelta])
 
   useEffect(() => {
     if (!user) {
@@ -317,6 +379,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       <DynamicWelcome />
       <section style={{ display: 'grid', gap: 28 }}>
         <DashboardCards cards={stats} />
+        <MasteryDistribution scopes={masteryScopes} />
 
         <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
           <div className="badge">Class & student explorer</div>

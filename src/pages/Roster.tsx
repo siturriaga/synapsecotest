@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { auth, db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
@@ -83,6 +83,8 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   const [loading, setLoading] = useState(false)
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({})
   const [overrideDirty, setOverrideDirty] = useState(false)
+  const [autoCommitRequested, setAutoCommitRequested] = useState(false)
+  const autoIntentRef = useRef<'update' | 'new' | undefined>()
   const {
     loading: rosterLoading,
     records,
@@ -129,6 +131,62 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     }
     return 'Waiting for first snapshot…'
   }, [syncStatus, syncError, lastSyncedAt])
+
+  useEffect(() => {
+    autoIntentRef.current = undefined
+  }, [file])
+
+  useEffect(() => {
+    if (!file || loading) return
+    const handle = setTimeout(() => {
+      runAnalysis()
+    }, 400)
+    return () => clearTimeout(handle)
+  }, [file, period, quarter, testName, loading, runAnalysis])
+
+  useEffect(() => {
+    if (!overrideDirty || !file || loading) return
+    const handle = setTimeout(() => {
+      runAnalysis()
+    }, 600)
+    return () => clearTimeout(handle)
+  }, [overrideDirty, file, loading, runAnalysis])
+
+  useEffect(() => {
+    if (!autoCommitRequested) return
+    if (!preview || loading) return
+
+    let cancelled = false
+
+    const proceed = async () => {
+      if (preview.stats.needs_review > 0) {
+        setStatus('Auto-sync continuing — unresolved fields will be stored as N/A.')
+      }
+
+      let intent = autoIntentRef.current
+      if (!testName.trim() && !intent) {
+        const wantsUpdate = window.confirm(
+          'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
+        )
+        intent = wantsUpdate ? 'update' : 'new'
+        autoIntentRef.current = intent
+      }
+
+      try {
+        await uploadFile('commit', intent)
+      } finally {
+        if (!cancelled) {
+          setAutoCommitRequested(false)
+        }
+      }
+    }
+
+    void proceed()
+
+    return () => {
+      cancelled = true
+    }
+  }, [autoCommitRequested, preview, loading, testName, uploadFile])
 
   const handleDownload = useCallback((upload: SavedRosterUpload) => {
     try {
@@ -206,6 +264,14 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     })
   }, [])
 
+  const runAnalysis = useCallback(() => {
+    if (!file || loading) {
+      return
+    }
+    setAutoCommitRequested(true)
+    void uploadFile('preview')
+  }, [file, loading, uploadFile])
+
   const resetOverride = useCallback((rowNumber: number) => {
     setOverrides((prev) => {
       if (!prev[rowNumber]) return prev
@@ -217,70 +283,99 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     })
   }, [])
 
-  async function uploadFile(mode: 'preview' | 'commit') {
-    if (!user || !file) {
-      setError('Select a file and ensure you are signed in.')
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      setStatus(mode === 'preview' ? 'Uploading for preview…' : 'Applying roster to Firestore…')
-
-      let id = uploadId
-      if (!id) {
-        const token = await auth.currentUser?.getIdToken()
-        const form = new FormData()
-        form.append('file', file)
-        const res = await fetch(`/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`, {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: form
-        })
-        if (!res.ok) {
-          throw new Error(await res.text())
-        }
-        const data = await res.json()
-        id = data.uploadId
-        setUploadId(id)
+  const uploadFile = useCallback(
+    async (
+      mode: 'preview' | 'commit',
+      intent?: 'update' | 'new'
+    ): Promise<PreviewResponse | CommitResponse | null> => {
+      if (!user || !file) {
+        setError('Select a file and ensure you are signed in.')
+        return null
       }
 
-      const response = await safeFetch<PreviewResponse | CommitResponse>(
-        '/.netlify/functions/processRoster',
-        {
-          method: 'POST',
-          body: JSON.stringify({ uploadId: id, mode, manualOverrides: buildManualOverrides() })
-        }
-      )
+      try {
+        setLoading(true)
+        setError(null)
+        setStatus(
+          mode === 'preview'
+            ? 'Analysing roster upload…'
+            : 'Publishing roster to your secure workspace…'
+        )
 
-      if (mode === 'preview') {
-        setPreview(response as PreviewResponse)
-        setStatus('Preview ready — resolve any issues before committing.')
-        setOverrideDirty(false)
-      } else {
-        const commit = response as CommitResponse
-        const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
-        setStatus(`Synced ${commit.written} learners. Skipped ${commit.skipped}.${averageText}`)
-        setPreview(null)
-        setUploadId(null)
-        setFile(null)
-        setTestName('')
-        setOverrides({})
-        setOverrideDirty(false)
-        try {
-          await triggerSync()
-        } catch (syncErr) {
-          console.error('Unable to force roster snapshot sync', syncErr)
+        let id = uploadId
+        if (!id) {
+          const token = await auth.currentUser?.getIdToken()
+          const form = new FormData()
+          form.append('file', file)
+          const res = await fetch(
+            `/.netlify/functions/uploadRoster?period=${encodeURIComponent(period)}&quarter=${encodeURIComponent(quarter)}&testName=${encodeURIComponent(testName)}`,
+            {
+              method: 'POST',
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              body: form
+            }
+          )
+          if (!res.ok) {
+            throw new Error(await res.text())
+          }
+          const data = await res.json()
+          id = data.uploadId
+          setUploadId(id)
         }
+
+        const response = await safeFetch<PreviewResponse | CommitResponse>(
+          '/.netlify/functions/processRoster',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              uploadId: id,
+              mode,
+              manualOverrides: buildManualOverrides(),
+              intent
+            })
+          }
+        )
+
+        if (mode === 'preview') {
+          setPreview(response as PreviewResponse)
+          setStatus('Analysis complete — syncing to dashboard shortly…')
+          setOverrideDirty(false)
+          return response as PreviewResponse
+        } else {
+          const commit = response as CommitResponse
+          const averageText =
+            commit.assessmentSummary.average !== null
+              ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.`
+              : ''
+          setStatus(`Auto-sync complete: ${commit.written} learners updated. Skipped ${commit.skipped}.${averageText}`)
+          setOverrides({})
+          setOverrideDirty(false)
+          try {
+            await triggerSync()
+          } catch (syncErr) {
+            console.error('Unable to force roster snapshot sync', syncErr)
+          }
+          return commit
+        }
+      } catch (err: any) {
+        console.error(err)
+        setError(err?.message ?? 'Upload failed.')
+        return null
+      } finally {
+        setLoading(false)
       }
-    } catch (err: any) {
-      console.error(err)
-      setError(err?.message ?? 'Upload failed.')
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [
+      user,
+      file,
+      uploadId,
+      period,
+      quarter,
+      testName,
+      buildManualOverrides,
+      triggerSync
+    ]
+  )
 
   if (!user) {
     return (
@@ -304,7 +399,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            uploadFile('preview')
+            runAnalysis()
           }}
         >
           <div className="field">
@@ -321,6 +416,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 setPreview(null)
                 setOverrides({})
                 setOverrideDirty(false)
+                setAutoCommitRequested(false)
                 setStatus('')
                 setError(null)
               }}
@@ -371,15 +467,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
             <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Preview mastery data'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => uploadFile('commit')}
-              disabled={!uploadId || loading}
-            >
-              Commit to Firestore
+              {loading ? 'Processing…' : 'Run auto-sync now'}
             </button>
           </div>
         </form>
@@ -449,6 +537,22 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 </div>
               )}
             </div>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 12,
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+              Auto-sync keeps your dashboard, groups, and assignments updated instantly.
+            </span>
+            <button type="button" className="secondary" onClick={runAnalysis} disabled={loading}>
+              {loading ? 'Processing…' : 'Re-run sync'}
+            </button>
           </div>
           <table className="table">
             <thead>

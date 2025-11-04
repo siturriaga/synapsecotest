@@ -471,7 +471,9 @@ body[data-micro='on'] .sidebar-link:hover {
   display: flex;
   align-items: center;
   gap: 32px;
-  position: relative;
+  position: sticky;
+  top: 32px;
+  z-index: 5;
   overflow: hidden;
   transition: background-image 600ms ease;
 }
@@ -700,6 +702,9 @@ body[data-micro='on'] .sidebar-link:hover {
   .dynamic-welcome {
     flex-direction: column;
     align-items: flex-start;
+    position: relative;
+    top: auto;
+    z-index: 0;
   }
   .welcome-orb {
     width: 96px;
