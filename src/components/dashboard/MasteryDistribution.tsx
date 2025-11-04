@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { PrintButton } from '../core/PrintButton'
 import type { SavedAssessment } from '../../types/roster'
 
 type MasteryTier = 'approaching' | 'developing' | 'onGrade' | 'mastered'
@@ -15,28 +16,28 @@ const MASTERY_LEVELS: Array<{
     label: 'Approaching',
     description: 'Below 50% — intensive reteach needed',
     color: '#fda4af',
-    background: 'linear-gradient(90deg, rgba(248, 113, 113, 0.28), rgba(244, 114, 182, 0.18))'
+    background: 'linear-gradient(90deg, rgba(248, 113, 113, 0.38), rgba(244, 114, 182, 0.28))'
   },
   {
     id: 'developing',
     label: 'Developing',
     description: '50-69% — targeted scaffolds',
     color: '#fcd34d',
-    background: 'linear-gradient(90deg, rgba(251, 191, 36, 0.28), rgba(250, 204, 21, 0.14))'
+    background: 'linear-gradient(90deg, rgba(251, 191, 36, 0.38), rgba(250, 204, 21, 0.22))'
   },
   {
     id: 'onGrade',
     label: 'On Grade',
     description: '70-89% — on grade level',
     color: '#4ade80',
-    background: 'linear-gradient(90deg, rgba(74, 222, 128, 0.28), rgba(16, 185, 129, 0.18))'
+    background: 'linear-gradient(90deg, rgba(74, 222, 128, 0.38), rgba(16, 185, 129, 0.26))'
   },
   {
     id: 'mastered',
     label: 'Mastered',
     description: '90%+ — enrichment ready',
     color: '#60a5fa',
-    background: 'linear-gradient(90deg, rgba(96, 165, 250, 0.28), rgba(129, 140, 248, 0.2))'
+    background: 'linear-gradient(90deg, rgba(96, 165, 250, 0.38), rgba(129, 140, 248, 0.26))'
   }
 ]
 
@@ -59,6 +60,7 @@ type MasteryScope = {
 
 type MasteryDistributionProps = {
   scopes: MasteryScope[]
+  sectionId?: string
 }
 
 function percentage(count: number, total: number) {
@@ -72,20 +74,26 @@ function formatAverage(value: number | null) {
   return Number.isInteger(rounded) ? `${Math.round(rounded)}%` : `${rounded.toFixed(1)}%`
 }
 
-export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
+export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution' }: MasteryDistributionProps) {
   const renderedScopes = useMemo(() => scopes.filter((scope) => scope.summary), [scopes])
 
   if (!renderedScopes.length) {
     return (
-      <section className="glass-card" style={{ display: 'grid', gap: 16 }}>
-        <div className="badge">Proficiency distribution</div>
+      <section id={sectionId} className="glass-card" style={{ display: 'grid', gap: 16 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <div>
+            <div className="badge">Proficiency distribution</div>
+            <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Mastery data</h3>
+          </div>
+          <PrintButton targetId={sectionId} label="Print mastery distribution" />
+        </header>
         <article
           className="glass-subcard"
           style={{
-            border: '1px solid rgba(148,163,184,0.25)',
+            border: '1px solid rgba(148,163,184,0.35)',
             borderRadius: 16,
             padding: 18,
-            background: 'rgba(15,23,42,0.55)'
+            background: 'rgba(15,23,42,0.62)'
           }}
         >
           <strong style={{ fontSize: 18, display: 'block', marginBottom: 6 }}>Mastery data</strong>
@@ -99,17 +107,28 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
   }
 
   return (
-    <section className="glass-card" style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+    <section id={sectionId} className="glass-card" style={{ display: 'grid', gap: 20 }}>
+      <header
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
+          flexWrap: 'wrap'
+        }}
+      >
         <div>
           <div className="badge">Proficiency distribution</div>
           <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Track mastery momentum</h3>
         </div>
-        <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 420 }}>
-          These visuals reflect the most recent score for each learner. Missing scores remain flexible — they stay in the roster as
-          N/A so uploads never block your workflow.
-        </p>
-      </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, maxWidth: 460 }}>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+            These visuals reflect the most recent score for each learner. Missing scores remain flexible — they stay in the roster as
+            N/A so uploads never block your workflow.
+          </p>
+          <PrintButton targetId={sectionId} label="Print mastery distribution" />
+        </div>
+      </header>
       <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
         {renderedScopes.map((scope) => {
           const { summary } = scope
@@ -138,12 +157,12 @@ export function MasteryDistribution({ scopes }: MasteryDistributionProps) {
               key={scope.id}
               className="glass-subcard"
               style={{
-                border: '1px solid rgba(148,163,184,0.25)',
+                border: '1px solid rgba(148,163,184,0.35)',
                 borderRadius: 18,
                 padding: 20,
                 display: 'grid',
                 gap: 14,
-                background: 'rgba(15,23,42,0.55)'
+                background: 'rgba(15,23,42,0.62)'
               }}
             >
               <header style={{ display: 'grid', gap: 4 }}>

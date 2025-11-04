@@ -4,6 +4,7 @@ import type { User } from 'firebase/auth'
 import { db } from '../firebase'
 import { DynamicWelcome } from '../components/core/DynamicWelcome'
 import { DashboardCards, type StatCard } from '../components/core/DashboardCards'
+import { PrintButton } from '../components/core/PrintButton'
 import {
   MasteryDistribution,
   buildMasterySummary,
@@ -11,6 +12,7 @@ import {
   type MasteryScope
 } from '../components/dashboard/MasteryDistribution'
 import { useRosterData } from '../hooks/useRosterData'
+import { buildStudentInsight, type StudentInsight } from '../utils/studentInsights'
 
 interface DashboardProps {
   user: User | null
@@ -18,6 +20,16 @@ interface DashboardProps {
 }
 
 const PERIOD_CHOICES = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+
+const SECTION_IDS = {
+  stats: 'dashboard-overview',
+  mastery: 'mastery-distribution',
+  explorer: 'class-student-explorer',
+  latestAssessment: 'latest-assessment',
+  assessmentHistory: 'assessment-history',
+  pulses: 'pulse-updates',
+  assignments: 'assignments-radar'
+} as const
 
 type Pulse = {
   id: string
@@ -239,6 +251,26 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
   const studentMastery = useMemo(() => buildMasterySummary(studentScores), [studentScores])
   const studentTrendDelta = useMemo(() => computeTrendDelta(studentHistory), [studentHistory])
 
+  const studentInsight = useMemo<StudentInsight | null>(() => {
+    if (!selectedStudent) return null
+    return buildStudentInsight({
+      student: selectedStudent,
+      history: studentHistory,
+      classAverage: classMetrics?.average ?? rosterInsights?.averageScore ?? null,
+      trendDelta: studentTrendDelta,
+      groupInsights,
+      pedagogy: pedagogy ?? null
+    })
+  }, [
+    selectedStudent,
+    studentHistory,
+    classMetrics?.average,
+    rosterInsights?.averageScore,
+    studentTrendDelta,
+    groupInsights,
+    pedagogy
+  ])
+
   const masteryScopes = useMemo<MasteryScope[]>(() => {
     const scopes: MasteryScope[] = []
     if (allMastery) {
@@ -430,19 +462,38 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
     <div className="fade-in">
       <DynamicWelcome />
       <section style={{ display: 'grid', gap: 28 }}>
-        <DashboardCards cards={stats} />
-        <MasteryDistribution scopes={masteryScopes} />
+        <section id={SECTION_IDS.stats} style={{ display: 'grid', gap: 16 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div className="badge">Key metrics</div>
+              <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Daily pulse</h3>
+            </div>
+            <PrintButton targetId={SECTION_IDS.stats} label="Print key metrics" />
+          </header>
+          <DashboardCards cards={stats} />
+        </section>
+        <MasteryDistribution scopes={masteryScopes} sectionId={SECTION_IDS.mastery} />
 
-        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
-          <div className="badge">Class & student explorer</div>
+        <section
+          id={SECTION_IDS.explorer}
+          className="glass-card"
+          style={{ display: 'grid', gap: 18 }}
+        >
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div className="badge">Class & student explorer</div>
+              <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Focus on every learner</h3>
+            </div>
+            <PrintButton targetId={SECTION_IDS.explorer} label="Print class and student explorer" />
+          </header>
           <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
             <div
               className="glass-subcard"
               style={{
                 padding: 18,
                 borderRadius: 18,
-                border: '1px solid rgba(148,163,184,0.25)',
-                background: 'rgba(15,23,42,0.55)',
+                border: '1px solid rgba(148,163,184,0.35)',
+                background: 'rgba(15,23,42,0.62)',
                 display: 'grid',
                 gap: 12
               }}
@@ -545,8 +596,8 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
               style={{
                 padding: 18,
                 borderRadius: 18,
-                border: '1px solid rgba(148,163,184,0.25)',
-                background: 'rgba(15,23,42,0.55)',
+                border: '1px solid rgba(148,163,184,0.35)',
+                background: 'rgba(15,23,42,0.62)',
                 display: 'grid',
                 gap: 12
               }}
@@ -627,23 +678,93 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 </p>
               )}
             </div>
+            {studentInsight && (
+              <div
+                className="glass-subcard"
+                style={{
+                  padding: 18,
+                  borderRadius: 18,
+                  border: '1px solid rgba(99,102,241,0.35)',
+                  background: 'linear-gradient(135deg, rgba(99,102,241,0.32), rgba(14,165,233,0.22))',
+                  display: 'grid',
+                  gap: 12
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <strong>AI insight</strong>
+                  <span className="tag" style={{ background: 'rgba(15,23,42,0.45)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                    Gemini brief
+                  </span>
+                </div>
+                <p style={{ margin: 0, color: 'rgba(226,232,240,0.92)', lineHeight: 1.5 }}>{studentInsight.headline}</p>
+                {studentInsight.highlights.length > 0 && (
+                  <div>
+                    <strong style={{ fontSize: 13 }}>Recent evidence</strong>
+                    <ul
+                      style={{
+                        margin: '8px 0 0 16px',
+                        padding: 0,
+                        display: 'grid',
+                        gap: 4,
+                        color: 'var(--text-muted)',
+                        listStyle: 'disc'
+                      }}
+                    >
+                      {studentInsight.highlights.map((highlight, index) => (
+                        <li key={index}>{highlight}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {studentInsight.recommendations.length > 0 && (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <strong style={{ fontSize: 13 }}>Next steps</strong>
+                    <ul
+                      style={{
+                        margin: '4px 0 0 16px',
+                        padding: 0,
+                        display: 'grid',
+                        gap: 4,
+                        color: 'var(--text-muted)',
+                        listStyle: 'disc'
+                      }}
+                    >
+                      {studentInsight.recommendations.map((recommendation, index) => (
+                        <li key={index}>{recommendation}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
         {derivedLatestAssessment && (
-          <section className="glass-card">
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <section id={SECTION_IDS.latestAssessment} className="glass-card">
+            <header
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap'
+              }}
+            >
               <div>
                 <div className="badge">Latest mastery upload</div>
                 <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>{derivedLatestAssessment.testName}</h3>
               </div>
-              {derivedLatestAssessment.period && derivedLatestAssessment.quarter && (
-                <span className="tag">Period {derivedLatestAssessment.period} · {derivedLatestAssessment.quarter}</span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {derivedLatestAssessment.period && derivedLatestAssessment.quarter && (
+                  <span className="tag">Period {derivedLatestAssessment.period} · {derivedLatestAssessment.quarter}</span>
+                )}
+                <PrintButton targetId={SECTION_IDS.latestAssessment} label="Print latest mastery upload" />
+              </div>
             </header>
             <div style={{ display: 'grid', gap: 12, marginTop: 18 }}>
               <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.62)' }}>
                   <strong>Average</strong>
                   <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
                     {derivedLatestAssessment.averageScore !== null && derivedLatestAssessment.averageScore !== undefined
@@ -651,13 +772,13 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                       : 'N/A'}
                   </div>
                 </div>
-                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.62)' }}>
                   <strong>Range</strong>
                   <div style={{ marginTop: 6 }}>
                     High {derivedLatestAssessment.maxScore ?? 'N/A'} · Low {derivedLatestAssessment.minScore ?? 'N/A'}
                   </div>
                 </div>
-                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)' }}>
+                <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.62)' }}>
                   <strong>Learners</strong>
                   <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{derivedLatestAssessment.studentCount ?? 'N/A'}</div>
                 </div>
@@ -667,13 +788,18 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         )}
 
         {combinedSummaries.length > 0 && (
-          <section className="glass-card">
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <section id={SECTION_IDS.assessmentHistory} className="glass-card">
+            <header
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+            >
               <div>
                 <div className="badge">Assessment history</div>
                 <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Recent uploads</h3>
               </div>
-              <a href="/assignments" style={{ color: 'var(--accent)', fontWeight: 600 }}>Design follow-ups →</a>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <a href="/assignments" style={{ color: 'var(--accent)', fontWeight: 600 }}>Design follow-ups →</a>
+                <PrintButton targetId={SECTION_IDS.assessmentHistory} label="Print assessment history" />
+              </div>
             </header>
             <table className="table" style={{ marginTop: 18 }}>
               <thead>
@@ -704,13 +830,18 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           </section>
         )}
 
-        <section className="glass-card">
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <section id={SECTION_IDS.pulses} className="glass-card">
+          <header
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+          >
             <div>
               <div className="badge">Live oversight</div>
               <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Pulse updates</h3>
             </div>
-            <a href="/groups" style={{ color: 'var(--accent)', fontWeight: 600 }}>Review groups →</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <a href="/groups" style={{ color: 'var(--accent)', fontWeight: 600 }}>Review groups →</a>
+              <PrintButton targetId={SECTION_IDS.pulses} label="Print pulse updates" />
+            </div>
           </header>
           {pulses.length === 0 ? (
             <div className="empty-state" style={{ marginTop: 18 }}>
@@ -719,7 +850,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           ) : (
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 22, display: 'grid', gap: 16 }}>
               {pulses.map((pulse) => (
-                <li key={pulse.id} style={{ border: '1px solid rgba(148,163,184,0.2)', borderRadius: 14, padding: 16 }}>
+                <li key={pulse.id} style={{ border: '1px solid rgba(148,163,184,0.32)', borderRadius: 14, padding: 16 }}>
                   <div style={{ fontWeight: 600 }}>{pulse.title}</div>
                   <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{pulse.detail}</div>
                   {pulse.createdAt && (
@@ -733,13 +864,18 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           )}
         </section>
 
-        <section className="glass-card">
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <section id={SECTION_IDS.assignments} className="glass-card">
+          <header
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+          >
             <div>
               <div className="badge">Upcoming</div>
               <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Assignments radar</h3>
             </div>
-            <a href="/assignments" style={{ color: 'var(--accent)', fontWeight: 600 }}>Manage assignments →</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <a href="/assignments" style={{ color: 'var(--accent)', fontWeight: 600 }}>Manage assignments →</a>
+              <PrintButton targetId={SECTION_IDS.assignments} label="Print assignments radar" />
+            </div>
           </header>
           {assignments.length === 0 ? (
             <div className="empty-state" style={{ marginTop: 18 }}>
