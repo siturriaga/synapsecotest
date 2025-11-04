@@ -583,14 +583,18 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
               onChange={(event) => setDueDate(event.target.value)}
             />
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="field" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <input
+              id="assignment-remediation"
+              name="assignment-remediation"
               type="checkbox"
               checked={includeRemediation}
               onChange={(event) => setIncludeRemediation(event.target.checked)}
             />
-            Include remediation pathways
-          </label>
+            <label htmlFor="assignment-remediation" style={{ cursor: 'pointer' }}>
+              Include remediation pathways
+            </label>
+          </div>
           <button type="submit" className="primary" disabled={loading}>
             {loading ? 'Generating…' : 'Generate and save assignment'}
           </button>
