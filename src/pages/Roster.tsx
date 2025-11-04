@@ -136,58 +136,6 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     autoIntentRef.current = undefined
   }, [file])
 
-  useEffect(() => {
-    if (!file || loading) return
-    const handle = setTimeout(() => {
-      runAnalysis()
-    }, 400)
-    return () => clearTimeout(handle)
-  }, [file, period, quarter, testName, loading, runAnalysis])
-
-  useEffect(() => {
-    if (!overrideDirty || !file || loading) return
-    const handle = setTimeout(() => {
-      runAnalysis()
-    }, 600)
-    return () => clearTimeout(handle)
-  }, [overrideDirty, file, loading, runAnalysis])
-
-  useEffect(() => {
-    if (!autoCommitRequested) return
-    if (!preview || loading) return
-
-    let cancelled = false
-
-    const proceed = async () => {
-      if (preview.stats.needs_review > 0) {
-        setStatus('Auto-sync continuing — unresolved fields will be stored as N/A.')
-      }
-
-      let intent = autoIntentRef.current
-      if (!testName.trim() && !intent) {
-        const wantsUpdate = window.confirm(
-          'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
-        )
-        intent = wantsUpdate ? 'update' : 'new'
-        autoIntentRef.current = intent
-      }
-
-      try {
-        await uploadFile('commit', intent)
-      } finally {
-        if (!cancelled) {
-          setAutoCommitRequested(false)
-        }
-      }
-    }
-
-    void proceed()
-
-    return () => {
-      cancelled = true
-    }
-  }, [autoCommitRequested, preview, loading, testName, uploadFile])
-
   const handleDownload = useCallback((upload: SavedRosterUpload) => {
     try {
       const base64 = upload.storage.kind === 'inline' ? upload.storage.data : upload.inlineData
@@ -258,25 +206,6 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     setOverrides((prev) => {
       const nextRow = { ...(prev[rowNumber] ?? {}), [field]: value }
       const next = { ...prev, [rowNumber]: nextRow }
-      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
-      setOverrideDirty(hasValues)
-      return next
-    })
-  }, [])
-
-  const runAnalysis = useCallback(() => {
-    if (!file || loading) {
-      return
-    }
-    setAutoCommitRequested(true)
-    void uploadFile('preview')
-  }, [file, loading, uploadFile])
-
-  const resetOverride = useCallback((rowNumber: number) => {
-    setOverrides((prev) => {
-      if (!prev[rowNumber]) return prev
-      const next = { ...prev }
-      delete next[rowNumber]
       const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
       setOverrideDirty(hasValues)
       return next
@@ -376,6 +305,77 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       triggerSync
     ]
   )
+
+  const runAnalysis = useCallback(() => {
+    if (!file || loading) {
+      return
+    }
+    setAutoCommitRequested(true)
+    void uploadFile('preview')
+  }, [file, loading, uploadFile])
+
+  const resetOverride = useCallback((rowNumber: number) => {
+    setOverrides((prev) => {
+      if (!prev[rowNumber]) return prev
+      const next = { ...prev }
+      delete next[rowNumber]
+      const hasValues = Object.values(next).some((entry) => entry && Object.keys(entry).length > 0)
+      setOverrideDirty(hasValues)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!file || loading) return
+    const handle = setTimeout(() => {
+      runAnalysis()
+    }, 400)
+    return () => clearTimeout(handle)
+  }, [file, period, quarter, testName, loading, runAnalysis])
+
+  useEffect(() => {
+    if (!overrideDirty || !file || loading) return
+    const handle = setTimeout(() => {
+      runAnalysis()
+    }, 600)
+    return () => clearTimeout(handle)
+  }, [overrideDirty, file, loading, runAnalysis])
+
+  useEffect(() => {
+    if (!autoCommitRequested) return
+    if (!preview || loading) return
+
+    let cancelled = false
+
+    const proceed = async () => {
+      if (preview.stats.needs_review > 0) {
+        setStatus('Auto-sync continuing — unresolved fields will be stored as N/A.')
+      }
+
+      let intent = autoIntentRef.current
+      if (!testName.trim() && !intent) {
+        const wantsUpdate = window.confirm(
+          'No assessment name detected. Is this upload updating an existing dataset?\nSelect OK for Update or Cancel for New.'
+        )
+        intent = wantsUpdate ? 'update' : 'new'
+        autoIntentRef.current = intent
+      }
+
+      try {
+        await uploadFile('commit', intent)
+      } finally {
+        if (!cancelled) {
+          setAutoCommitRequested(false)
+        }
+      }
+    }
+
+    void proceed()
+
+    return () => {
+      cancelled = true
+    }
+  }, [autoCommitRequested, preview, loading, testName, uploadFile])
 
   if (!user) {
     return (
