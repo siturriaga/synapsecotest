@@ -25,7 +25,7 @@ type CommitResponse = {
 }
 
 function formatSize(bytes: number | null) {
-  if (bytes === null || bytes === undefined) return '—'
+  if (bytes === null || bytes === undefined) return 'N/A'
   if (bytes < 1024) return `${bytes} B`
   const kb = bytes / 1024
   if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`
@@ -282,7 +282,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 value={quarter}
                 onChange={(event) => setQuarter(event.target.value)}
               >
-                <option value="">—</option>
+                <option value="">N/A</option>
                 <option value="Q1">Q1</option>
                 <option value="Q2">Q2</option>
                 <option value="Q3">Q3</option>
@@ -359,19 +359,19 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           >
             <div style={{ minWidth: 180 }}>
               <strong>Total learners</strong>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{insights.totalStudents || '—'}</div>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{insights.totalStudents || 'N/A'}</div>
             </div>
             <div style={{ minWidth: 180 }}>
               <strong>Class average</strong>
               <div style={{ fontSize: 24, fontWeight: 700 }}>
-                {insights.averageScore !== null ? insights.averageScore.toFixed(1) : '—'}
+                {insights.averageScore !== null ? insights.averageScore.toFixed(1) : 'N/A'}
               </div>
             </div>
             {insights.highest && (
               <div style={{ minWidth: 220 }}>
                 <strong>Top performer</strong>
                 <div style={{ fontSize: 15, marginTop: 6 }}>
-                  {insights.highest.name} · {insights.highest.score ?? '—'}
+                  {insights.highest.name} · {insights.highest.score ?? 'N/A'}
                   <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                     {insights.highest.testName ?? 'Assessment'}
                   </div>
@@ -382,7 +382,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               <div style={{ minWidth: 220 }}>
                 <strong>Needs support</strong>
                 <div style={{ fontSize: 15, marginTop: 6 }}>
-                  {insights.lowest.name} · {insights.lowest.score ?? '—'}
+                  {insights.lowest.name} · {insights.lowest.score ?? 'N/A'}
                   <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                     {insights.lowest.testName ?? 'Assessment'}
                   </div>
@@ -485,13 +485,13 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               {summaries.map((record) => (
                 <tr key={record.id}>
                   <td>{record.testName}</td>
-                  <td>{record.period ?? '—'}</td>
-                  <td>{record.quarter ?? '—'}</td>
-                  <td>{record.averageScore !== null ? record.averageScore.toFixed(1) : '—'}</td>
-                  <td>{record.maxScore ?? '—'}</td>
-                  <td>{record.minScore ?? '—'}</td>
-                  <td>{record.studentCount ?? '—'}</td>
-                  <td>{record.updatedAt ? record.updatedAt.toLocaleString() : '—'}</td>
+                  <td>{record.period ?? 'N/A'}</td>
+                  <td>{record.quarter ?? 'N/A'}</td>
+                  <td>{record.averageScore !== null ? record.averageScore.toFixed(1) : 'N/A'}</td>
+                  <td>{record.maxScore ?? 'N/A'}</td>
+                  <td>{record.minScore ?? 'N/A'}</td>
+                  <td>{record.studentCount ?? 'N/A'}</td>
+                  <td>{record.updatedAt ? record.updatedAt.toLocaleString() : 'N/A'}</td>
               </tr>
             ))}
           </tbody>
@@ -538,10 +538,10 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                       )}
                     </div>
                   </td>
-                  <td>{upload.testName ?? '—'}</td>
-                  <td>{upload.period ?? '—'}</td>
-                  <td>{upload.quarter ?? '—'}</td>
-                  <td>{upload.createdAt ? upload.createdAt.toLocaleString() : '—'}</td>
+                  <td>{upload.testName ?? 'N/A'}</td>
+                  <td>{upload.period ?? 'N/A'}</td>
+                  <td>{upload.quarter ?? 'N/A'}</td>
+                  <td>{upload.createdAt ? upload.createdAt.toLocaleString() : 'N/A'}</td>
                   <td>{formatSize(upload.size)}</td>
                   <td>
                     <button
@@ -591,12 +591,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
               {records.map((record) => (
                 <tr key={record.id}>
                   <td>{record.displayName}</td>
-                  <td>{record.score !== null ? record.score : '—'}</td>
-                  <td>{record.testName ?? '—'}</td>
-                  <td>{record.period ?? '—'}</td>
-                  <td>{record.quarter ?? '—'}</td>
-                  <td>{record.sheetRow ?? '—'}</td>
-                  <td>{record.createdAt ? record.createdAt.toLocaleString() : '—'}</td>
+                  <td>{record.score !== null ? record.score : 'N/A'}</td>
+                  <td>{record.testName ?? 'N/A'}</td>
+                  <td>{record.period ?? 'N/A'}</td>
+                  <td>{record.quarter ?? 'N/A'}</td>
+                  <td>{record.sheetRow ?? 'N/A'}</td>
+                  <td>{record.createdAt ? record.createdAt.toLocaleString() : 'N/A'}</td>
                 </tr>
               ))}
             </tbody>

@@ -99,7 +99,7 @@ const UNIVERSAL_PRACTICES: PedagogicalGuidance = {
 }
 
 function formatScore(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A'
   const rounded = Number(value.toFixed(1))
   return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1)
 }
@@ -131,7 +131,7 @@ function buildGroupInsights(records: SavedAssessment[], recent: AssessmentSnapsh
     const toolkit = GROUP_TOOLKIT[id]
     const minScore = segment[0]?.score ?? null
     const maxScore = segment[segment.length - 1]?.score ?? null
-    const range = minScore !== null && maxScore !== null ? `${formatScore(minScore)}–${formatScore(maxScore)}` : '—'
+    const range = minScore !== null && maxScore !== null ? `${formatScore(minScore)}–${formatScore(maxScore)}` : 'N/A'
 
     const students: RosterInsightEntry[] = segment.map((record) => ({
       name: record.displayName,
