@@ -2,6 +2,7 @@ import { auth } from '../firebase'
 
 const NETLIFY_PREFIX = '/.netlify/functions/'
 const API_PREFIX = '/api/'
+const LOCAL_NETLIFY_ORIGIN = 'http://localhost:8888'
 
 class SafeFetchError extends Error {
   status: number
@@ -66,7 +67,25 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
     }
 
     const fallbackUrl = `${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`
-    const response = await attempt(fallbackUrl)
-    return (await response.json()) as T
+
+    try {
+      const response = await attempt(fallbackUrl)
+      return (await response.json()) as T
+    } catch (apiError) {
+      const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
+      const canUseLocalNetlify =
+        isBrowser &&
+        window.location.hostname === 'localhost' &&
+        apiError instanceof SafeFetchError &&
+        apiError.status === 404
+
+      if (!canUseLocalNetlify) {
+        throw apiError
+      }
+
+      const localUrl = `${LOCAL_NETLIFY_ORIGIN}${url}`
+      const response = await attempt(localUrl)
+      return (await response.json()) as T
+    }
   }
 }
