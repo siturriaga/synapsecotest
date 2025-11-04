@@ -206,6 +206,39 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     })
   }, [])
 
+  const handleCommit = useCallback(async () => {
+    if (loading) return
+
+    if (!file) {
+      setError('Select a file and ensure you are signed in.')
+      return
+    }
+
+    const previewResult = await uploadFile('preview')
+    if (!previewResult || !('rows' in previewResult)) {
+      return
+    }
+
+    if (previewResult.stats.needs_review > 0) {
+      const proceed = window.confirm(
+        'Some rows still need review. Continue saving and mark unresolved fields as N/A?'
+      )
+      if (!proceed) {
+        return
+      }
+    }
+
+    let chosenIntent: 'update' | 'new' | undefined
+    if (!testName.trim()) {
+      const wantsUpdate = window.confirm(
+        'No assessment name detected. Is this an update to an existing data set?\nSelect OK for Update or Cancel for New.'
+      )
+      chosenIntent = wantsUpdate ? 'update' : 'new'
+    }
+
+    await uploadFile('commit', chosenIntent)
+  }, [file, loading, testName, uploadFile])
+
   const resetOverride = useCallback((rowNumber: number) => {
     setOverrides((prev) => {
       if (!prev[rowNumber]) return prev
@@ -217,10 +250,13 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
     })
   }, [])
 
-  async function uploadFile(mode: 'preview' | 'commit') {
+  async function uploadFile(
+    mode: 'preview' | 'commit',
+    intent?: 'update' | 'new'
+  ): Promise<PreviewResponse | CommitResponse | null> {
     if (!user || !file) {
       setError('Select a file and ensure you are signed in.')
-      return
+      return null
     }
 
     try {
@@ -250,7 +286,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         '/.netlify/functions/processRoster',
         {
           method: 'POST',
-          body: JSON.stringify({ uploadId: id, mode, manualOverrides: buildManualOverrides() })
+          body: JSON.stringify({
+            uploadId: id,
+            mode,
+            manualOverrides: buildManualOverrides(),
+            intent
+          })
         }
       )
 
@@ -258,6 +299,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setPreview(response as PreviewResponse)
         setStatus('Preview ready — resolve any issues before committing.')
         setOverrideDirty(false)
+        return response as PreviewResponse
       } else {
         const commit = response as CommitResponse
         const averageText = commit.assessmentSummary.average !== null ? ` Class average ${commit.assessmentSummary.average.toFixed(1)}.` : ''
@@ -273,10 +315,12 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         } catch (syncErr) {
           console.error('Unable to force roster snapshot sync', syncErr)
         }
+        return commit
       }
     } catch (err: any) {
       console.error(err)
       setError(err?.message ?? 'Upload failed.')
+      return null
     } finally {
       setLoading(false)
     }
@@ -304,7 +348,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            uploadFile('preview')
+            void uploadFile('preview')
           }}
         >
           <div className="field">
@@ -371,15 +415,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
             <button type="submit" className="primary" disabled={!file || loading}>
-              {loading ? 'Processing…' : 'Preview mastery data'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => uploadFile('commit')}
-              disabled={!uploadId || loading}
-            >
-              Commit to Firestore
+              {loading ? 'Processing…' : 'Upload & analyse'}
             </button>
           </div>
         </form>
@@ -449,6 +485,28 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
                 </div>
               )}
             </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                void uploadFile('preview')
+              }}
+              disabled={loading}
+            >
+              {loading ? 'Re-analysing…' : 'Refresh analysis'}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                void handleCommit()
+              }}
+              disabled={loading}
+            >
+              {loading ? 'Saving…' : 'Save to workspace'}
+            </button>
           </div>
           <table className="table">
             <thead>
