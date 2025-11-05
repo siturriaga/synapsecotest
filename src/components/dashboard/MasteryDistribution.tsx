@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { PrintButton } from '../core/PrintButton'
 import type { SavedAssessment } from '../../types/roster'
 
@@ -61,6 +61,7 @@ type MasteryScope = {
 type MasteryDistributionProps = {
   scopes: MasteryScope[]
   sectionId?: string
+  headerExtras?: ReactNode
 }
 
 function percentage(count: number, total: number) {
@@ -74,7 +75,7 @@ function formatAverage(value: number | null) {
   return Number.isInteger(rounded) ? `${Math.round(rounded)}%` : `${rounded.toFixed(1)}%`
 }
 
-export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution' }: MasteryDistributionProps) {
+export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution', headerExtras }: MasteryDistributionProps) {
   const renderedScopes = useMemo(() => scopes.filter((scope) => scope.summary), [scopes])
 
   if (!renderedScopes.length) {
@@ -85,7 +86,10 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
             <div className="badge">Proficiency distribution</div>
             <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Mastery data</h3>
           </div>
-          <PrintButton targetId={sectionId} label="Print mastery distribution" />
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {headerExtras}
+            <PrintButton targetId={sectionId} label="Print mastery distribution" />
+          </div>
         </header>
         <article
           className="glass-subcard"
@@ -121,7 +125,8 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
           <div className="badge">Proficiency distribution</div>
           <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Track mastery momentum</h3>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, maxWidth: 460 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', maxWidth: 520 }}>
+          {headerExtras}
           <p style={{ margin: 0, color: 'var(--text-muted)' }}>
             These visuals reflect the most recent score for each learner. Missing scores remain flexible — they stay in the roster as
             N/A so uploads never block your workflow.
@@ -129,7 +134,13 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
           <PrintButton targetId={sectionId} label="Print mastery distribution" />
         </div>
       </header>
-      <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+      <div
+        style={{
+          display: 'grid',
+          gap: 18,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))'
+        }}
+      >
         {renderedScopes.map((scope) => {
           const { summary } = scope
           if (!summary) return null
@@ -152,22 +163,23 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
               scope.trendDelta > 0 ? `▲${scope.trendDelta.toFixed(1)} pts` : `▼${Math.abs(scope.trendDelta).toFixed(1)} pts`
             insightParts.push(`Latest shift: ${deltaText}`)
           }
-          return (
-            <article
-              key={scope.id}
-              className="glass-subcard"
-              style={{
-                border: '1px solid rgba(148,163,184,0.35)',
-                borderRadius: 18,
-                padding: 20,
-                display: 'grid',
-                gap: 14,
-                background: 'rgba(15,23,42,0.62)'
-              }}
-            >
-              <header style={{ display: 'grid', gap: 4 }}>
-                <strong style={{ fontSize: 18 }}>{scope.title}</strong>
-                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{scope.subtitle}</span>
+            return (
+              <article
+                key={scope.id}
+                className="glass-subcard"
+                style={{
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  borderRadius: 18,
+                  padding: 20,
+                  display: 'grid',
+                  gap: 14,
+                  background: 'linear-gradient(135deg, rgba(15,23,42,0.72), rgba(30,64,175,0.25))',
+                  boxShadow: '0 28px 60px rgba(15,23,42,0.45)'
+                }}
+              >
+                <header style={{ display: 'grid', gap: 4 }}>
+                  <strong style={{ fontSize: 18 }}>{scope.title}</strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{scope.subtitle}</span>
               </header>
               <div style={{ display: 'flex', gap: 18, alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <div>
