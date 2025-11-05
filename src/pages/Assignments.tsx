@@ -17,7 +17,6 @@ type StandardDetails = {
   objectives?: string[]
 }
 import { safeFetch } from '../utils/safeFetch'
-import { buildLatestScoresByStudent, buildStudentPeriodLookup } from '../utils/rosterAnalytics'
 import { db } from '../firebase'
 import { useRosterData } from '../hooks/useRosterData'
 
@@ -104,111 +103,10 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [assignments, setAssignments] = useState<Assignment[]>([])
-  const { insights, summaries, records, groupInsights, pedagogy, students } = useRosterData()
-
-  const studentPeriodLookup = useMemo(() => buildStudentPeriodLookup(students), [students])
-
-  const latestStudentScores = useMemo(
-    () => Array.from(buildLatestScoresByStudent(records, studentPeriodLookup, students).values()),
-    [records, studentPeriodLookup, students]
-  )
-
-  const latestSummary = useMemo(() => summaries[0] ?? null, [summaries])
-
-  const strugglingLearners = useMemo(() => {
-    const scored = latestStudentScores.filter((entry) => typeof entry.score === 'number')
-    if (!scored.length) return [] as string[]
-    const sorted = [...scored].sort((a, b) => {
-      const scoreA = a.score ?? 0
-      const scoreB = b.score ?? 0
-      return scoreA - scoreB
-    })
-    return sorted
-      .slice(0, 3)
-      .map((entry) => `${entry.displayName ?? entry.studentId ?? 'Student'} (${entry.score ?? 'N/A'})`)
-  }, [latestStudentScores])
-
-  const focusNarrative = useMemo(() => {
-    const parts: string[] = []
-    if (latestSummary?.testName) {
-      const averageText =
-        latestSummary.averageScore !== null
-          ? `averaged ${latestSummary.averageScore.toFixed(1)}`
-          : 'is awaiting average calculations'
-      parts.push(`Latest assessment ${latestSummary.testName} ${averageText}.`)
-    }
-    if (insights?.highest?.name && insights.highest.score !== null) {
-      parts.push(`${insights.highest.name} is excelling at ${insights.highest.score}.`)
-    }
-    if (strugglingLearners.length) {
-      parts.push(`Learners needing support: ${strugglingLearners.join(', ')}.`)
-    }
-    if (pedagogy?.summary) {
-      parts.push(pedagogy.summary)
-    }
-    const foundationGroup = groupInsights.find((group) => group.id === 'foundation')
-    if (foundationGroup) {
-      parts.push(
-        `Design scaffolds with student voice for ${foundationGroup.studentCount} learners in the ${foundationGroup.label.toLowerCase()} group.`
-      )
-    }
-    const extendingGroup = groupInsights.find((group) => group.id === 'extending')
-    if (extendingGroup) {
-      parts.push(
-        `Activate ${extendingGroup.studentCount} ${extendingGroup.label.toLowerCase()} learners as peer mentors and co-designers.`
-      )
-    }
-    if (!parts.length) {
-      parts.push('Use evidence-based instructional strategies connected to recent mastery trends.')
-    }
-    return parts.join(' ')
-  }, [insights, latestSummary, strugglingLearners, pedagogy, groupInsights])
-
-  const masterySummaryText = useMemo(() => {
-    if (!insights || !latestSummary) {
-      return 'Upload mastery rosters so the AI can anchor prompts to real class data.'
-    }
-    const segments: string[] = []
-    segments.push(
-      `Latest: ${latestSummary.testName}${
-        latestSummary.averageScore !== null ? ` · Avg ${latestSummary.averageScore.toFixed(1)}` : ''
-      }`
-    )
-    if (insights.highest?.name && insights.highest.score !== null) {
-      segments.push(`Top: ${insights.highest.name} ${insights.highest.score}`)
-    }
-    if (strugglingLearners.length) {
-      segments.push(`Needs support: ${strugglingLearners.join(', ')}`)
-    }
-    if (groupInsights.length) {
-      const summary = groupInsights
-        .map((group) => `${group.label.replace(/\s+/g, ' ')} ${group.range}`)
-        .join(' • ')
-      segments.push(`Groups: ${summary}`)
-    }
-    return segments.join(' • ')
-  }, [insights, latestSummary, strugglingLearners, groupInsights])
-
-  const classContext = useMemo(
-    () => ({
-      pedagogy: pedagogy
-        ? {
-            summary: pedagogy.summary,
-            bestPractices: pedagogy.bestPractices,
-            reflectionPrompts: pedagogy.reflectionPrompts
-          }
-        : null,
-      groups: groupInsights.map((group) => ({
-        id: group.id,
-        label: group.label,
-        range: group.range,
-        studentCount: group.studentCount,
-        recommendedPractices: group.recommendedPractices,
-        studentNames: group.students.map((student) => student.name)
-      }))
-    }),
-    [groupInsights, pedagogy]
-  )
+  const { groupInsights, pedagogy, aiContext } = useRosterData()
+  const focusNarrative = aiContext.focusNarrative
+  const masterySummaryText = aiContext.masterySummary
+  const classContext = aiContext.classContext
 
   const gradeOptions = useMemo(() => {
     if (!subjects.length) {
@@ -299,6 +197,8 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     try {
       setLoading(true)
       setStatusMessage('Generating AI assessment…')
+      const aiClassContext =
+        classContext.pedagogy || classContext.groups.length ? classContext : null
       const blueprint = await safeFetch<AssessmentBlueprint>('/.netlify/functions/generateAssignment', {
         method: 'POST',
         body: JSON.stringify({
@@ -312,7 +212,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
           includeRemediation,
           standardClarifications,
           standardObjectives,
-          classContext
+          classContext: aiClassContext
         })
       })
 

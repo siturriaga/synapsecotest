@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import catalog from '../../data/standards/catalog.json'
 import standardDetails from '../../data/standards/details.json'
 import { safeFetch } from '../utils/safeFetch'
+import { useRosterData } from '../hooks/useRosterData'
 
 interface StandardsPageProps {
   user: User | null
@@ -66,6 +67,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
   const [blueprint, setBlueprint] = useState<AssessmentBlueprint | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { aiContext } = useRosterData()
 
   const gradeOptions = useMemo(() => {
     if (!subjects.length) {
@@ -120,6 +122,11 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
     setLoading(true)
     setError(null)
     try {
+      const aiClassContext =
+        aiContext.classContext.pedagogy || aiContext.classContext.groups.length
+          ? aiContext.classContext
+          : null
+      const focusPayload = focus.trim() ? focus.trim() : aiContext.focusNarrative
       const response = await safeFetch<AssessmentBlueprint>(
         '/.netlify/functions/generateAssignment',
         {
@@ -127,14 +134,15 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
           body: JSON.stringify({
             standardCode: selected.code,
             standardName: selected.name,
-            focus,
+            focus: focusPayload,
             subject: subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId,
             grade: gradeLevel,
             assessmentType: 'reading_plus',
             questionCount: 5,
             includeRemediation: true,
             standardClarifications: selected.clarifications ?? [],
-            standardObjectives: selected.objectives ?? []
+            standardObjectives: selected.objectives ?? [],
+            classContext: aiClassContext
           })
         }
       )
@@ -247,6 +255,11 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
             onChange={(event) => setFocus(event.target.value)}
             placeholder="e.g., connect to career pathways"
           />
+          {aiContext.masterySummary && (
+            <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '6px 0 0' }}>
+              Roster context: {aiContext.masterySummary}
+            </p>
+          )}
         </div>
         <button className="primary" onClick={generateLesson} disabled={loading}>
           {loading ? 'Generating blueprint…' : 'Generate AI blueprint'}
