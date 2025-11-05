@@ -16,7 +16,11 @@ type StandardDetails = {
   clarifications?: string[]
   objectives?: string[]
 }
-import { safeFetch } from '../utils/safeFetch'
+import {
+  generateAssignmentBlueprint,
+  type AiAssessmentBlueprint,
+  type AiClassContext
+} from '../services/aiCoordinator'
 import { buildLatestScoresByStudent, buildStudentPeriodLookup } from '../utils/rosterAnalytics'
 import { db } from '../firebase'
 import { useRosterData } from '../hooks/useRosterData'
@@ -38,49 +42,12 @@ type Subject = {
   grades: Record<string, { standards: Standard[] }>
 }
 
-type AssessmentQuestion = {
-  id: string
-  prompt: string
-  options?: string[]
-  answer: string
-  rationale: string
-}
-
-type AssessmentLevel = {
-  level: string
-  description: string
-  questions: AssessmentQuestion[]
-  remediation: string[]
-}
-
-type PedagogyFocus = {
-  summary: string
-  bestPractices: string[]
-  reflectionPrompts: string[]
-}
-
-type AssessmentBlueprint = {
-  standardCode: string
-  standardName: string
-  subject: string
-  grade: string
-  assessmentType: string
-  questionCount: number
-  aiInsights: {
-    overview: string
-    classStrategies: string[]
-    nextSteps: string[]
-    pedagogy?: PedagogyFocus
-  }
-  levels: AssessmentLevel[]
-}
-
 type Assignment = {
   id: string
   title: string
   status: 'draft' | 'assigned' | 'completed'
   dueDate?: string
-  blueprint?: AssessmentBlueprint
+  blueprint?: AiAssessmentBlueprint
   createdAt?: string
 }
 
@@ -189,7 +156,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     return segments.join(' • ')
   }, [insights, latestSummary, strugglingLearners, groupInsights])
 
-  const classContext = useMemo(
+  const classContext = useMemo<AiClassContext>(
     () => ({
       pedagogy: pedagogy
         ? {
@@ -205,9 +172,18 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
         studentCount: group.studentCount,
         recommendedPractices: group.recommendedPractices,
         studentNames: group.students.map((student) => student.name)
-      }))
+      })),
+      masterySummary: masterySummaryText || null,
+      spotlightLearners: strugglingLearners,
+      narrative: focusNarrative
     }),
-    [groupInsights, pedagogy]
+    [
+      focusNarrative,
+      groupInsights,
+      masterySummaryText,
+      pedagogy,
+      strugglingLearners
+    ]
   )
 
   const gradeOptions = useMemo(() => {
@@ -299,21 +275,18 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     try {
       setLoading(true)
       setStatusMessage('Generating AI assessment…')
-      const blueprint = await safeFetch<AssessmentBlueprint>('/.netlify/functions/generateAssignment', {
-        method: 'POST',
-        body: JSON.stringify({
-          standardCode,
-          standardName: standard?.name ?? standardCode,
-          focus: focusNarrative,
-          subject: subjectLabel,
-          grade: gradeLevel,
-          assessmentType,
-          questionCount,
-          includeRemediation,
-          standardClarifications,
-          standardObjectives,
-          classContext
-        })
+      const blueprint = await generateAssignmentBlueprint({
+        standardCode,
+        standardName: standard?.name ?? standardCode,
+        focus: focusNarrative,
+        subject: subjectLabel,
+        grade: gradeLevel,
+        assessmentType,
+        questionCount,
+        includeRemediation,
+        standardClarifications,
+        standardObjectives,
+        classContext
       })
 
       await addDoc(collection(db, `users/${user.uid}/assignments`), {

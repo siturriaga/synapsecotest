@@ -1,13 +1,5 @@
 import { auth } from '../firebase'
-import {
-  API_PREFIX,
-  joinUrl,
-  LOCAL_NETLIFY_ORIGIN,
-  NETLIFY_PREFIX,
-  REMOTE_API_BASE,
-  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
-  REMOTE_FUNCTION_BASE
-} from './netlifyTargets'
+import { NETLIFY_PREFIX, buildFunctionTargets } from './netlifyTargets'
 
 class SafeFetchError extends Error {
   status: number
@@ -37,50 +29,34 @@ async function performFetch(url: string, options: RequestInit, token?: string | 
 }
 
 async function parseError(response: Response) {
+  const contentType = response.headers.get('content-type') ?? ''
   const text = await response.text()
-  try {
-    const parsed = JSON.parse(text)
-    if (parsed && typeof parsed.error === 'string') {
-      return parsed.error
+
+  if (contentType.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed.error === 'string') {
+        return parsed.error
+      }
+      if (parsed && typeof parsed.message === 'string') {
+        return parsed.message
+      }
+    } catch {
+      // fall through to the plain-text handler
     }
-  } catch (err) {
-    // ignore JSON parse failures; fall back to raw text
   }
-  return text || `Request failed with status ${response.status}`
+
+  if (text) {
+    return text
+  }
+
+  return `Request failed with status ${response.status}`
 }
 
 export async function safeFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
   const user = auth.currentUser ?? null
-  const targets: string[] = []
-  const appendTarget = (target: string) => {
-    if (!targets.includes(target)) {
-      targets.push(target)
-    }
-  }
-
-  appendTarget(url)
-
   const requestingFunction = url.startsWith(NETLIFY_PREFIX)
-  const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
-
-  if (requestingFunction) {
-    appendTarget(`${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`)
-
-    if (isBrowser && window.location.hostname === 'localhost') {
-      appendTarget(`${LOCAL_NETLIFY_ORIGIN}${url}`)
-    }
-
-    const functionPath = url.startsWith(NETLIFY_PREFIX) ? url.slice(NETLIFY_PREFIX.length) : url
-    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
-    } else {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, url))
-    }
-
-    if (REMOTE_API_BASE) {
-      appendTarget(joinUrl(REMOTE_API_BASE, functionPath))
-    }
-  }
+  const targets = requestingFunction ? buildFunctionTargets(url.slice(NETLIFY_PREFIX.length)) : [url]
 
   let lastError: unknown
   const shouldRetry404 = (error: unknown, index: number) =>
@@ -96,6 +72,8 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
 
   const unauthorizedStatuses = new Set([401, 403, 440])
   const maxAuthAttempts = user ? 2 : 1
+  const serializedBody = typeof options.body === 'string' ? options.body : undefined
+  const baseInit: RequestInit = serializedBody !== undefined ? { ...options, body: serializedBody } : { ...options }
 
   for (let attempt = 0; attempt < maxAuthAttempts; attempt += 1) {
     const token = user ? await user.getIdToken(attempt === 1) : null
@@ -105,7 +83,7 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
       const target = targets[index]
 
       try {
-        const response = await performFetch(target, options, token)
+        const response = await performFetch(target, baseInit, token)
 
         if (!response.ok) {
           const error = new SafeFetchError(await parseError(response), response.status)
