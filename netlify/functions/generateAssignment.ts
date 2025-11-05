@@ -1,6 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
+import { withCors } from './_lib/cors'
 
 type AssessmentQuestion = {
   id: string
@@ -113,7 +114,7 @@ function normalizeClassGroups(groups: unknown): NormalizedClassGroup[] {
     .filter((group): group is NormalizedClassGroup => Boolean(group))
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+const baseHandler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -236,7 +237,7 @@ Ensure questions are evenly distributed across levels and match the ${assessment
 For matching, return options as an array of definitions and use the answer to pair terms.
 For reading_plus, include short evidence-based prompts.
 Infuse every element with inclusive, anti-deficit language and emphasize student agency, collaboration, and community relevance.
-Keep responses concise and free of markdown."""`
+Keep responses concise and free of markdown."""`;
 
     const responseText = await callGemini(uid, 'Assessment generated', prompt, 0.5)
     let parsed: AssessmentBlueprint
@@ -301,3 +302,8 @@ Keep responses concise and free of markdown."""`
     }
   }
 }
+
+export const handler = withCors(baseHandler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})
