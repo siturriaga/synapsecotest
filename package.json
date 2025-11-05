@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "vite preview"
+    "start": "vite preview",
+    "api:canary": "node scripts/api-canary.cjs",
+    "contract:check": "node scripts/contract-check.cjs"
   },
   "dependencies": {
     "busboy": "^1.6.0",
