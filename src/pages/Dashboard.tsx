@@ -667,27 +667,30 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
   const availableStudents = classStudents.length ? classStudents : rosterStudents
 
   return (
-    <div className="fade-in" style={{ display: 'grid', gap: 32 }}>
+    <div className="fade-in" style={{ display: 'grid', gap: 28 }}>
       <DynamicWelcome />
-      <section style={{ display: 'grid', gap: 32 }}>
-        <section id={SECTION_IDS.stats} style={{ display: 'grid', gap: 16 }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div>
-              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Daily pulse</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 460 }}>
-                Toggle between assessments to focus your planning. Combined mode blends every scored learner into a unified snapshot.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <label htmlFor="dashboard-test-filter" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                Showing
-              </label>
+      <section style={{ display: 'grid', gap: 28 }}>
+        <div className="glass-card" style={{ display: 'grid', gap: 18, padding: 24 }}>
+          <header style={{ display: 'grid', gap: 6 }}>
+            <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Dial in the view you need</h2>
+            <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 600 }}>
+              Choose an assessment, class period, and learner spotlight once — every section below responds in sync so you can focus on coaching instead of chasing filters.
+            </p>
+          </header>
+          <div
+            style={{
+              display: 'grid',
+              gap: 16,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))'
+            }}
+          >
+            <div className="glass-subcard" style={{ borderRadius: 16, padding: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 8 }}>
+              <label htmlFor="dashboard-test-filter" style={{ fontWeight: 600, fontSize: 13 }}>Assessment lens</label>
               <select
                 id="dashboard-test-filter"
                 value={selectedTest}
                 onChange={(event) => setSelectedTest(event.target.value)}
                 className="table-input"
-                style={{ minWidth: 180 }}
               >
                 {testOptions.map((option) => (
                   <option key={option} value={option}>
@@ -695,49 +698,9 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                   </option>
                 ))}
               </select>
-              <ClearButton label="Clear metrics" onClear={handleClearStats} />
-              <PrintButton targetId={SECTION_IDS.stats} label="Print key metrics" />
             </div>
-          </header>
-          <DashboardCards cards={statCards} />
-        </section>
-
-        <MasteryDistribution
-          scopes={masteryScopes}
-          sectionId={SECTION_IDS.mastery}
-          headerExtras={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span className="tag" style={{ background: 'rgba(148,163,184,0.15)', border: '1px solid rgba(148,163,184,0.35)' }}>
-                {testLabel(selectedTest)}
-              </span>
-              <ClearButton label="Clear mastery" onClear={handleClearMastery} />
-            </div>
-          }
-        />
-
-        <section id={SECTION_IDS.explorer} className="glass-card" style={{ display: 'grid', gap: 24 }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Focus on every learner</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 540 }}>
-                Drill into periods and assessments to surface trends. Gemini keeps insights current so you can move from planning to action quickly.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <ClearButton label="Clear explorer" onClear={handleClearExplorer} />
-              <PrintButton targetId={SECTION_IDS.explorer} label="Print class and student explorer" />
-            </div>
-          </header>
-          <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)', display: 'grid', gap: 12 }}>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <label htmlFor="dashboard-period-filter" style={{ fontWeight: 600 }}>
-                  Class focus
-                </label>
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  Select all classes or a period to tailor metrics. Periods without uploads stay available for future data.
-                </span>
-              </div>
+            <div className="glass-subcard" style={{ borderRadius: 16, padding: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 8 }}>
+              <label htmlFor="dashboard-period-filter" style={{ fontWeight: 600, fontSize: 13 }}>Class period</label>
               <select
                 id="dashboard-period-filter"
                 value={selectedPeriod}
@@ -752,15 +715,8 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 ))}
               </select>
             </div>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)', display: 'grid', gap: 12 }}>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <label htmlFor="dashboard-explorer-test" style={{ fontWeight: 600 }}>
-                  Assessment focus
-                </label>
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  Compare an individual test or keep the combined perspective to show every evidence point.
-                </span>
-              </div>
+            <div className="glass-subcard" style={{ borderRadius: 16, padding: 16, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 8 }}>
+              <label htmlFor="dashboard-explorer-test" style={{ fontWeight: 600, fontSize: 13 }}>Learner evidence</label>
               <select
                 id="dashboard-explorer-test"
                 value={selectedExplorerTest}
@@ -774,15 +730,8 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 ))}
               </select>
             </div>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(99,102,241,0.35)', background: 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(14,165,233,0.18))', display: 'grid', gap: 12 }}>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <label htmlFor="dashboard-student-select" style={{ fontWeight: 600 }}>
-                  Spotlight learner
-                </label>
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  Choose a student to review their assessment story and Gemini-powered coaching notes.
-                </span>
-              </div>
+            <div className="glass-subcard" style={{ borderRadius: 16, padding: 16, border: '1px solid rgba(99,102,241,0.32)', background: 'linear-gradient(135deg, rgba(99,102,241,0.24), rgba(14,165,233,0.14))', display: 'grid', gap: 8 }}>
+              <label htmlFor="dashboard-student-select" style={{ fontWeight: 600, fontSize: 13 }}>Spotlight learner</label>
               <select
                 id="dashboard-student-select"
                 value={selectedStudentId}
@@ -797,70 +746,135 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
               </select>
             </div>
           </div>
-          <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-            <div className="glass-subcard" style={{ padding: 20, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.65)', display: 'grid', gap: 12 }}>
+        </div>
+
+        <section id={SECTION_IDS.stats} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 520, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Performance snapshot</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Key averages, highs, and lows update instantly as you toggle filters. Use the clear button to reset metrics or print the full panel for PLC notes.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <ClearButton label="Clear metrics" onClear={handleClearStats} />
+              <PrintButton targetId={SECTION_IDS.stats} label="Print overview" />
+            </div>
+          </header>
+          <div
+            style={{
+              display: 'grid',
+              gap: 20,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))'
+            }}
+          >
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)' }}>
+              <DashboardCards cards={statCards} />
+            </div>
+            <MasteryDistribution
+              scopes={masteryScopes}
+              sectionId={SECTION_IDS.mastery}
+              variant="embedded"
+              headerExtras={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="tag" style={{ background: 'rgba(148,163,184,0.15)', border: '1px solid rgba(148,163,184,0.35)' }}>
+                    {testLabel(selectedTest)}
+                  </span>
+                  <ClearButton label="Clear mastery" onClear={handleClearMastery} />
+                </div>
+              }
+              printLabel="Print mastery cards"
+            />
+          </div>
+        </section>
+
+        <section id={SECTION_IDS.explorer} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 560, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Classroom coaching studio</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Zoom into the filtered class to see standout scores, growth trends, and a friendly AI coaching note for your spotlight learner.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <ClearButton label="Clear explorer" onClear={handleClearExplorer} />
+              <PrintButton targetId={SECTION_IDS.explorer} label="Print coaching studio" />
+            </div>
+          </header>
+          <div
+            style={{
+              display: 'grid',
+              gap: 20,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))'
+            }}
+          >
+            <div className="glass-subcard" style={{ padding: 22, borderRadius: 20, border: '1px solid rgba(148,163,184,0.32)', background: 'rgba(15,23,42,0.62)', display: 'grid', gap: 14 }}>
               <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <strong style={{ fontSize: 18 }}>Class summary</strong>
-                <span className="tag" style={{ background: 'rgba(148,163,184,0.2)', border: '1px solid rgba(148,163,184,0.35)' }}>
+                <strong style={{ fontSize: 18 }}>Class pulse</strong>
+                <span className="tag" style={{ background: 'rgba(148,163,184,0.2)', border: '1px solid rgba(148,163,184,0.32)' }}>
                   {selectedPeriod === 'all' ? 'All classes' : `Period ${selectedPeriod}`}
                 </span>
               </header>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 28, fontWeight: 700 }}>{formatPercentage(classMetrics.average)}</div>
+                  <div style={{ fontSize: 30, fontWeight: 700 }}>{formatPercentage(classMetrics.average)}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Average proficiency</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 600 }}>{classMetrics.total}</div>
+                  <div style={{ fontSize: 22, fontWeight: 600 }}>{classMetrics.total}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Assessments scored</div>
                 </div>
               </div>
-              <div style={{ display: 'grid', gap: 6, color: 'var(--text-muted)', fontSize: 13 }}>
+              <div style={{ display: 'grid', gap: 8, color: 'var(--text-muted)', fontSize: 13 }}>
                 <span>
-                  Top performer:{' '}
+                  Bright spot:{' '}
                   {classMetrics.topRecord
                     ? `${classMetrics.topRecord.displayName} · ${formatPercentage(classMetrics.topRecord.score ?? null)}`
                     : 'N/A'}
                 </span>
                 <span>
-                  Focus area:{' '}
+                  Next support:{' '}
                   {classMetrics.bottomRecord
                     ? `${classMetrics.bottomRecord.displayName} · ${formatPercentage(classMetrics.bottomRecord.score ?? null)}`
                     : 'N/A'}
                 </span>
               </div>
+              <div className="glass-subcard" style={{ padding: 14, borderRadius: 16, border: '1px solid rgba(148,163,184,0.28)', background: 'rgba(15,23,42,0.5)', display: 'grid', gap: 8 }}>
+                <strong style={{ fontSize: 13, color: 'var(--text-muted)' }}>Growth across tests</strong>
+                <ProgressSparkline data={historySeriesPeriod} stroke="rgba(129,140,248,0.9)" fill="rgba(129,140,248,0.22)" />
+              </div>
             </div>
+
             {selectedStudent && studentMetrics && (
-              <div className="glass-subcard" style={{ padding: 20, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.65)', display: 'grid', gap: 14 }}>
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <strong style={{ fontSize: 18 }}>{selectedStudent.displayName}</strong>
-                  <span className="tag" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)' }}>
-                    {testLabel(selectedExplorerTest)}
-                  </span>
-                </header>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div className="glass-subcard" style={{ padding: 22, borderRadius: 20, border: '1px solid rgba(99,102,241,0.32)', background: 'linear-gradient(135deg, rgba(99,102,241,0.28), rgba(14,165,233,0.16))', display: 'grid', gap: 16 }}>
+                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div>
-                    <div style={{ fontSize: 26, fontWeight: 700 }}>{formatPercentage(studentMetrics.average)}</div>
-                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Average</div>
+                    <strong style={{ fontSize: 18 }}>{selectedStudent.displayName}</strong>
+                    <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>Focused on {testLabel(selectedExplorerTest)}</p>
+                  </div>
+                  {studentTrendDelta != null && (
+                    <span className="tag" style={{ background: 'rgba(15,23,42,0.45)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                      {formatDelta(studentTrendDelta) ?? '—'} trend
+                    </span>
+                  )}
+                </header>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 28, fontWeight: 700 }}>{formatPercentage(studentMetrics.average)}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Average score</div>
                   </div>
                   {studentMetrics.latest && (
                     <div>
-                      <div style={{ fontSize: 20, fontWeight: 600 }}>{formatPercentage(studentMetrics.latest.score ?? null)}</div>
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{studentMetrics.latest.testName ?? 'Latest evidence'}</div>
-                    </div>
-                  )}
-                  {studentTrendDelta != null && (
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 600 }}>{formatDelta(studentTrendDelta) ?? '—'}</div>
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Trend</div>
+                      <div style={{ fontSize: 22, fontWeight: 600 }}>{formatPercentage(studentMetrics.latest.score ?? null)}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{studentMetrics.latest.testName ?? 'Most recent evidence'}</div>
                     </div>
                   )}
                 </div>
-                <ProgressSparkline data={studentTrendSeries} stroke="rgba(129,140,248,0.9)" fill="rgba(129,140,248,0.28)" />
+                <ProgressSparkline data={studentTrendSeries} stroke="rgba(244,114,182,0.9)" fill="rgba(244,114,182,0.22)" />
                 {studentMetrics.recent.length > 0 && (
-                  <div>
-                    <strong style={{ fontSize: 13 }}>Recent assessments</strong>
-                    <ul style={{ margin: '6px 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <strong style={{ fontSize: 13 }}>Recent checkpoints</strong>
+                    <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)' }}>
                       {studentMetrics.recent.map((entry, index) => (
                         <li key={index}>
                           {entry.testName ?? 'Assessment'} · {formatPercentage(entry.score ?? null)}
@@ -869,35 +883,30 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                     </ul>
                   </div>
                 )}
-              </div>
-            )}
-            {studentInsight && (
-              <div className="glass-subcard" style={{ padding: 20, borderRadius: 18, border: '1px solid rgba(99,102,241,0.35)', background: 'linear-gradient(135deg, rgba(99,102,241,0.32), rgba(14,165,233,0.18))', display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <strong>AI insight</strong>
-                  <span className="tag" style={{ background: 'rgba(15,23,42,0.45)', border: '1px solid rgba(255,255,255,0.2)' }}>
-                    Gemini brief
-                  </span>
-                </div>
-                <p style={{ margin: 0, color: 'rgba(226,232,240,0.92)', lineHeight: 1.6 }}>{studentInsight.headline}</p>
-                {studentInsight.highlights.length > 0 && (
-                  <div>
-                    <strong style={{ fontSize: 13 }}>Recent evidence</strong>
-                    <ul style={{ margin: '8px 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)', listStyle: 'disc' }}>
-                      {studentInsight.highlights.map((highlight, index) => (
-                        <li key={index}>{highlight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {studentInsight.recommendations.length > 0 && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <strong style={{ fontSize: 13 }}>Next steps</strong>
-                    <ul style={{ margin: '4px 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)', listStyle: 'disc' }}>
-                      {studentInsight.recommendations.map((recommendation, index) => (
-                        <li key={index}>{recommendation}</li>
-                      ))}
-                    </ul>
+                {studentInsight && (
+                  <div className="glass-subcard" style={{ padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 10 }}>
+                    <strong style={{ fontSize: 15 }}>Friendly coaching tip</strong>
+                    <p style={{ margin: 0, color: 'rgba(226,232,240,0.92)', lineHeight: 1.6 }}>{studentInsight.headline}</p>
+                    {studentInsight.highlights.length > 0 && (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>What we just noticed</span>
+                        <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)', listStyle: 'disc' }}>
+                          {studentInsight.highlights.map((highlight, index) => (
+                            <li key={index}>{highlight}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {studentInsight.recommendations.length > 0 && (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Coach next</span>
+                        <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'grid', gap: 4, color: 'var(--text-muted)', listStyle: 'disc' }}>
+                          {studentInsight.recommendations.map((recommendation, index) => (
+                            <li key={index}>{recommendation}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -905,12 +914,12 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
           </div>
         </section>
 
-        <section id={SECTION_IDS.assessmentHistory} className="glass-card" style={{ display: 'grid', gap: 20 }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Progress across tests</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 520 }}>
-                Review every upload with period filters and trend visuals. Combined averages synthesize growth across the entire roster.
+        <section id={SECTION_IDS.assessmentHistory} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 520, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Assessment timeline</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Review how each test landed across classes. Filter by period to zoom in, or keep the combined lens to monitor full grade-level momentum.
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -932,89 +941,99 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 ))}
               </select>
               <ClearButton label="Clear history" onClear={handleClearHistory} />
-              <PrintButton targetId={SECTION_IDS.assessmentHistory} label="Print assessment history" />
+              <PrintButton targetId={SECTION_IDS.assessmentHistory} label="Print timeline" />
             </div>
           </header>
-          <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)', display: 'grid', gap: 6 }}>
+          <div
+            style={{
+              display: 'grid',
+              gap: 20,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))'
+            }}
+          >
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 6 }}>
               <span style={{ fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
                 All classes average across tests
               </span>
-              <strong style={{ fontSize: 28 }}>{formatPercentage(allClassesAverageAcrossTests)}</strong>
+              <strong style={{ fontSize: 30 }}>{formatPercentage(allClassesAverageAcrossTests)}</strong>
             </div>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)' }}>
-              <strong style={{ fontSize: 14, color: 'var(--text-muted)' }}>All classes trend</strong>
-              <ProgressSparkline data={historySeriesAll} stroke="rgba(45,212,191,0.9)" fill="rgba(45,212,191,0.25)" />
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)' }}>
+              <strong style={{ fontSize: 14, color: 'var(--text-muted)' }}>Combined trend</strong>
+              <ProgressSparkline data={historySeriesAll} stroke="rgba(45,212,191,0.9)" fill="rgba(45,212,191,0.22)" />
             </div>
-            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)' }}>
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)' }}>
               <strong style={{ fontSize: 14, color: 'var(--text-muted)' }}>
                 {selectedHistoryPeriod === 'all' ? 'Period comparison' : `Period ${selectedHistoryPeriod} trend`}
               </strong>
               <ProgressSparkline data={historySeriesPeriod} stroke="rgba(129,140,248,0.9)" fill="rgba(129,140,248,0.25)" />
             </div>
           </div>
-          <table className="table" style={{ marginTop: 8 }}>
-            <thead>
-              <tr>
-                <th>Assessment</th>
-                <th>Period</th>
-                <th>Avg</th>
-                <th>High</th>
-                <th>Low</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assessmentHistoryRows.map((snapshot) => (
-                <tr key={snapshot.id}>
-                  <td>{snapshot.testName}</td>
-                  <td>{snapshot.period ?? 'All'}</td>
-                  <td>{formatPercentage(snapshot.averageScore ?? null)}</td>
-                  <td>{formatPercentage(snapshot.maxScore ?? null)}</td>
-                  <td>{formatPercentage(snapshot.minScore ?? null)}</td>
-                  <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : 'N/A'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-
-        <section id={SECTION_IDS.assignments} className="glass-card" style={{ display: 'grid', gap: 20 }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Assignments radar</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 480 }}>
-                Keep extensions, reteach plans, and mastery celebrations organized in one hub ready for printing.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <ClearButton label="Clear assignments" onClear={handleClearAssignments} />
-              <PrintButton targetId={SECTION_IDS.assignments} label="Print assignments radar" />
-            </div>
-          </header>
-          {assignments.length === 0 ? (
-            <div className="empty-state" style={{ marginTop: 18 }}>
-              Create differentiated assignments from any standard to monitor mastery progress here.
-            </div>
-          ) : (
-            <table className="table" style={{ marginTop: 8 }}>
+          <div className="glass-subcard" style={{ padding: 0, borderRadius: 18, border: '1px solid rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+            <table className="table" style={{ margin: 0 }}>
               <thead>
                 <tr>
-                  <th>Assignment</th>
-                  <th>Due date</th>
-                  <th>Status</th>
+                  <th>Assessment</th>
+                  <th>Period</th>
+                  <th>Avg</th>
+                  <th>High</th>
+                  <th>Low</th>
+                  <th>Updated</th>
                 </tr>
               </thead>
               <tbody>
-                {assignments.map((assignment) => (
-                  <tr key={assignment.id}>
-                    <td>{assignment.title}</td>
-                    <td>{assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : 'No due date'}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{assignment.status}</td>
+                {assessmentHistoryRows.map((snapshot) => (
+                  <tr key={snapshot.id}>
+                    <td>{snapshot.testName}</td>
+                    <td>{snapshot.period ?? 'All'}</td>
+                    <td>{formatPercentage(snapshot.averageScore ?? null)}</td>
+                    <td>{formatPercentage(snapshot.maxScore ?? null)}</td>
+                    <td>{formatPercentage(snapshot.minScore ?? null)}</td>
+                    <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : 'N/A'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section id={SECTION_IDS.assignments} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 520, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Assignment planner</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Capture reteach plans, celebrations, and extensions tied to your latest mastery data. Print a snapshot before class or PLC time.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <ClearButton label="Clear assignments" onClear={handleClearAssignments} />
+              <PrintButton targetId={SECTION_IDS.assignments} label="Print assignment planner" />
+            </div>
+          </header>
+          {assignments.length === 0 ? (
+            <div className="empty-state" style={{ marginTop: 4 }}>
+              Create differentiated assignments from any standard to monitor mastery progress here.
+            </div>
+          ) : (
+            <div className="glass-subcard" style={{ padding: 0, borderRadius: 18, border: '1px solid rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+              <table className="table" style={{ margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Assignment</th>
+                    <th>Due date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignments.map((assignment) => (
+                    <tr key={assignment.id}>
+                      <td>{assignment.title}</td>
+                      <td>{assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : 'No due date'}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{assignment.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       </section>
