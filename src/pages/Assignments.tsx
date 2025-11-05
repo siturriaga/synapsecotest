@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import catalog from '../../data/standards/catalog.json'
 import { safeFetch } from '../utils/safeFetch'
+import { buildLatestScoresByStudent, buildStudentPeriodLookup } from '../utils/rosterAnalytics'
 import { db } from '../firebase'
 import { useRosterData } from '../hooks/useRosterData'
 
@@ -92,20 +93,29 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [assignments, setAssignments] = useState<Assignment[]>([])
-  const { insights, summaries, records, groupInsights, pedagogy } = useRosterData()
+  const { insights, summaries, records, groupInsights, pedagogy, students } = useRosterData()
+
+  const studentPeriodLookup = useMemo(() => buildStudentPeriodLookup(students), [students])
+
+  const latestStudentScores = useMemo(
+    () => Array.from(buildLatestScoresByStudent(records, studentPeriodLookup, students).values()),
+    [records, studentPeriodLookup, students]
+  )
 
   const latestSummary = useMemo(() => summaries[0] ?? null, [summaries])
 
   const strugglingLearners = useMemo(() => {
-    const scored = records.filter((record) => typeof record.score === 'number')
+    const scored = latestStudentScores.filter((entry) => typeof entry.score === 'number')
     if (!scored.length) return [] as string[]
     const sorted = [...scored].sort((a, b) => {
       const scoreA = a.score ?? 0
       const scoreB = b.score ?? 0
       return scoreA - scoreB
     })
-    return sorted.slice(0, 3).map((record) => `${record.displayName} (${record.score ?? 'N/A'})`)
-  }, [records])
+    return sorted
+      .slice(0, 3)
+      .map((entry) => `${entry.displayName ?? entry.studentId ?? 'Student'} (${entry.score ?? 'N/A'})`)
+  }, [latestStudentScores])
 
   const focusNarrative = useMemo(() => {
     const parts: string[] = []
@@ -297,7 +307,11 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       setDueDate('')
     } catch (error: any) {
       console.error(error)
-      setStatusMessage(error?.message ?? 'Assignment generation failed.')
+      if (error?.status === 401 || error?.status === 403 || error?.status === 440) {
+        setStatusMessage('Your session expired. Refresh the page and sign in again to generate assignments.')
+      } else {
+        setStatusMessage(error?.message ?? 'Assignment generation failed.')
+      }
     } finally {
       setLoading(false)
     }
