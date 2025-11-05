@@ -134,22 +134,22 @@ function applyTheme(preferences: AppPreferences) {
   const baseRgb = hexToRgb(preferences.surfaceColor) ?? { r: 11, g: 17, b: 32 }
   const accentRgb = hexToRgb(preferences.accentColor) ?? { r: 99, g: 102, b: 241 }
 
-  const cardRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.12)
-  const hoverRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.2)
-  const borderRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.55)
+  const cardRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.24)
+  const hoverRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.32)
+  const borderRgb = mixRgb(baseRgb, { r: 255, g: 255, b: 255 }, 0.65)
   const accentSecondary = rgbToHex(mixRgb(accentRgb, { r: 255, g: 255, b: 255 }, 0.25))
 
   root.style.setProperty('--bg', `rgb(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b})`)
-  root.style.setProperty('--bg-soft', rgba(baseRgb, 0.7))
-  root.style.setProperty('--bg-card', rgba(cardRgb, 0.55))
-  root.style.setProperty('--bg-card-hover', rgba(hoverRgb, 0.75))
-  root.style.setProperty('--border', rgba(borderRgb, 0.26))
-  root.style.setProperty('--shadow-md', `0 24px 60px rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, 0.42)`)
+  root.style.setProperty('--bg-soft', rgba(baseRgb, 0.82))
+  root.style.setProperty('--bg-card', rgba(cardRgb, 0.72))
+  root.style.setProperty('--bg-card-hover', rgba(hoverRgb, 0.92))
+  root.style.setProperty('--border', rgba(borderRgb, 0.35))
+  root.style.setProperty('--shadow-md', `0 28px 70px rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, 0.45)`)
 
   root.style.setProperty('--accent', preferences.accentColor)
-  root.style.setProperty('--accent-soft', rgba(accentRgb, 0.18))
+  root.style.setProperty('--accent-soft', rgba(accentRgb, 0.3))
   root.style.setProperty('--accent-secondary', accentSecondary)
-  root.style.setProperty('--glow', `rgba(${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}, 0.28)`)
+  root.style.setProperty('--glow', `rgba(${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}, 0.45)`)
 
   if (preferences.texture === 'minimal') {
     delete document.body.dataset.texture

@@ -91,13 +91,18 @@ export function DynamicWelcome() {
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
       style={{
-        marginBottom: 28,
+        marginBottom: 32,
         backgroundImage: scene.gradient,
         position: 'sticky',
         top: 32,
         zIndex: 5
       }}
     >
+      <div className="welcome-backdrop" aria-hidden>
+        <span className="welcome-particle" />
+        <span className="welcome-particle" />
+        <span className="welcome-particle" />
+      </div>
       <div className={`welcome-orb ${scene.id}`} aria-hidden style={orbStyle}>
         <div className="welcome-orb__glow" />
         <div className="welcome-orb__core" />
@@ -106,16 +111,22 @@ export function DynamicWelcome() {
           <span>{scene.icon}</span>
         </div>
       </div>
-      <div>
-        <div className="badge">Dynamic welcome</div>
-        <h1 style={{ fontSize: 34, margin: '12px 0 6px', fontWeight: 800 }}>
+      <div className="welcome-content">
+        <div className="badge">Workspace welcome</div>
+        <h1 className="welcome-title">
           {scene.greeting}
           {displayName ? `, ${displayName}` : ', educator'}.
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: 16, maxWidth: 520 }}>{scene.caption}</p>
-        <div style={{ display: 'flex', gap: 14, marginTop: 16, alignItems: 'center', color: 'rgba(226,232,240,0.8)' }}>
-          <span style={{ fontSize: 18, fontWeight: 700 }}>{timeString}</span>
-          <span style={{ opacity: 0.7 }}>{dateString}</span>
+        <p className="welcome-caption">{scene.caption}</p>
+        <div className="welcome-meta">
+          <div>
+            <span className="welcome-meta__label">Current time</span>
+            <div className="welcome-meta__value">{timeString}</div>
+          </div>
+          <div>
+            <span className="welcome-meta__label">Today</span>
+            <div className="welcome-meta__value">{dateString}</div>
+          </div>
         </div>
       </div>
     </section>
