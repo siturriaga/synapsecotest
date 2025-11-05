@@ -286,8 +286,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
   return (
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
-        <div className="badge">Roster ingestion</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and sync to your dashboard</h2>
+        <h2 style={{ margin: '4px 0 6px', fontSize: 28, fontWeight: 800 }}>Upload mastery results and sync to your dashboard</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
           Drop in your export, add optional context, and we will publish it directly to your dashboard and teaching tools—no
           preview step required.
@@ -452,8 +451,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 18 }}>
           <div>
-            <div className="badge">Class periods</div>
-            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Organize learners by period</h3>
+            <h3 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700 }}>Organize learners by period</h3>
           </div>
           <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             Selections apply instantly and guide future uploads.
@@ -561,8 +559,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="badge">Class statistics</div>
-            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Saved assessment summaries</h3>
+            <h3 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700 }}>Saved assessment summaries</h3>
           </div>
           <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
             Print
@@ -726,8 +723,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="badge">Upload history</div>
-            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Roster upload library</h3>
+            <h3 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700 }}>Roster upload library</h3>
           </div>
           <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             {uploads.length ? `${uploads.length} recent files` : 'Waiting on your first upload'}
@@ -787,8 +783,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="badge">Individual records</div>
-            <h3 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 700 }}>Latest mastery uploads</h3>
+            <h3 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700 }}>Latest mastery uploads</h3>
           </div>
           <button type="button" className="secondary" onClick={() => window.print()} style={{ padding: '8px 16px' }}>
             Print
