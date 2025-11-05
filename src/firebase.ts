@@ -11,7 +11,7 @@ import {
   getRedirectResult,
   setPersistence
 } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, initializeFirestore } from 'firebase/firestore'
 import {
   API_PREFIX,
   joinUrl,
@@ -171,7 +171,18 @@ const firebaseConfig = loadBrowserConfig() ?? buildEnvConfig()
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+let firestoreInstance: ReturnType<typeof getFirestore>
+try {
+  firestoreInstance = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true
+  })
+} catch (err) {
+  console.warn('Falling back to default Firestore initialization', err)
+  firestoreInstance = getFirestore(app)
+}
+
+export const db = firestoreInstance
 
 const provider = new GoogleAuthProvider()
 provider.setCustomParameters({ prompt: 'select_account' })

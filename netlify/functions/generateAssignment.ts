@@ -100,7 +100,11 @@ function describeError(detail: string | undefined, statusCode: number): string {
     return 'Gemini flagged this request. Adjust the prompt and remove sensitive details before retrying.'
   }
 
-  if (normalized.includes('invalid api key') || normalized.includes('api key is not set')) {
+  if (
+    normalized.includes('invalid api key') ||
+    normalized.includes('api key is not set') ||
+    normalized.includes('api key is not configured')
+  ) {
     return 'Gemini is not configured for this workspace. Contact your administrator.'
   }
 
