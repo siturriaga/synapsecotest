@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import catalog from '../../data/standards/catalog.json'
 import standardDetails from '../../data/standards/details.json'
-import { safeFetch } from '../utils/safeFetch'
+import {
+  generateAssignmentBlueprint,
+  type AiAssessmentBlueprint
+} from '../services/aiCoordinator'
 
 interface StandardsPageProps {
   user: User | null
@@ -26,36 +29,6 @@ type Subject = {
   grades: Record<string, { standards: Standard[] }>
 }
 
-type AssessmentQuestion = {
-  id: string
-  prompt: string
-  options?: string[]
-  answer: string
-  rationale: string
-}
-
-type AssessmentLevel = {
-  level: string
-  description: string
-  questions: AssessmentQuestion[]
-  remediation: string[]
-}
-
-type AssessmentBlueprint = {
-  standardCode: string
-  standardName: string
-  subject: string
-  grade: string
-  assessmentType: string
-  questionCount: number
-  aiInsights: {
-    overview: string
-    classStrategies: string[]
-    nextSteps: string[]
-  }
-  levels: AssessmentLevel[]
-}
-
 export default function StandardsEnginePage({ user }: StandardsPageProps) {
   const subjects = useMemo(() => catalog.subjects as Subject[], [])
   const [subjectId, setSubjectId] = useState<string>('')
@@ -63,7 +36,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
   const [availableStandards, setAvailableStandards] = useState<Standard[]>([])
   const [selected, setSelected] = useState<Standard | null>(null)
   const [focus, setFocus] = useState('target vocabulary development and conceptual understanding')
-  const [blueprint, setBlueprint] = useState<AssessmentBlueprint | null>(null)
+  const [blueprint, setBlueprint] = useState<AiAssessmentBlueprint | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -120,24 +93,19 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
     setLoading(true)
     setError(null)
     try {
-      const response = await safeFetch<AssessmentBlueprint>(
-        '/.netlify/functions/generateAssignment',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            standardCode: selected.code,
-            standardName: selected.name,
-            focus,
-            subject: subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId,
-            grade: gradeLevel,
-            assessmentType: 'reading_plus',
-            questionCount: 5,
-            includeRemediation: true,
-            standardClarifications: selected.clarifications ?? [],
-            standardObjectives: selected.objectives ?? []
-          })
-        }
-      )
+      const response = await generateAssignmentBlueprint({
+        standardCode: selected.code,
+        standardName: selected.name,
+        focus,
+        subject: subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId,
+        grade: gradeLevel,
+        assessmentType: 'reading_plus',
+        questionCount: 5,
+        includeRemediation: true,
+        standardClarifications: selected.clarifications ?? [],
+        standardObjectives: selected.objectives ?? [],
+        classContext: null
+      })
       setBlueprint(response)
     } catch (err: any) {
       console.error(err)
