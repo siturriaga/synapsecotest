@@ -399,8 +399,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
   return (
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
-        <div className="badge">AI assignment builder</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Generate standards-aligned assessments</h2>
+        <h2 style={{ margin: '4px 0 6px', fontSize: 28, fontWeight: 800 }}>Generate standards-aligned assessments</h2>
         {masterySummaryText && (
           <div
             className="glass-subcard"

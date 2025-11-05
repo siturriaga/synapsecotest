@@ -83,8 +83,7 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
       <section id={sectionId} className="glass-card" style={{ display: 'grid', gap: 16 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
           <div>
-            <div className="badge">Proficiency distribution</div>
-            <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Mastery data</h3>
+            <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Mastery data</h3>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             {headerExtras}
@@ -122,8 +121,7 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
         }}
       >
         <div>
-          <div className="badge">Proficiency distribution</div>
-          <h3 style={{ margin: '12px 0 0', fontSize: 24, fontWeight: 700 }}>Track mastery momentum</h3>
+          <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Track mastery momentum</h3>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', maxWidth: 520 }}>
           {headerExtras}
@@ -151,17 +149,17 @@ export function MasteryDistribution({ scopes, sectionId = 'mastery-distribution'
           const hasScoredLearners = summary.scoredLearners > 0
           if (summary.scoredLearners) {
             if (masteryPercent >= 80) {
-              insightParts.push('Strong mastery trend — celebrate and extend learning!')
+              insightParts.push('Plenty to celebrate — stretch thinking with enrichment bursts.')
             } else if (masteryPercent >= 60) {
-              insightParts.push('Solid footing — keep reinforcing core concepts to lift more learners.')
+              insightParts.push('Solid footing — layer scaffolds so more learners tip into mastery.')
             } else {
-              insightParts.push('Reinforce foundations — focus reteach groups and formative checks.')
+              insightParts.push('Let’s shore up essentials with focused reteach groups and quick pulses.')
             }
           }
           if (scope.trendDelta != null && !Number.isNaN(scope.trendDelta)) {
             const deltaText =
               scope.trendDelta > 0 ? `▲${scope.trendDelta.toFixed(1)} pts` : `▼${Math.abs(scope.trendDelta).toFixed(1)} pts`
-            insightParts.push(`Latest shift: ${deltaText}`)
+            insightParts.push(`Latest shift: ${deltaText} across the most recent uploads.`)
           }
             return (
               <article

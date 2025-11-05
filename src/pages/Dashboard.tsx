@@ -673,8 +673,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         <section id={SECTION_IDS.stats} style={{ display: 'grid', gap: 16 }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div>
-              <div className="badge">Key metrics</div>
-              <h3 style={{ margin: '12px 0 6px', fontSize: 24, fontWeight: 700 }}>Daily pulse</h3>
+              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Daily pulse</h3>
               <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 460 }}>
                 Toggle between assessments to focus your planning. Combined mode blends every scored learner into a unified snapshot.
               </p>
@@ -719,8 +718,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         <section id={SECTION_IDS.explorer} className="glass-card" style={{ display: 'grid', gap: 24 }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div>
-              <div className="badge">Class & student explorer</div>
-              <h3 style={{ margin: '12px 0 6px', fontSize: 24, fontWeight: 700 }}>Focus on every learner</h3>
+              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Focus on every learner</h3>
               <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 540 }}>
                 Drill into periods and assessments to surface trends. Gemini keeps insights current so you can move from planning to action quickly.
               </p>
@@ -910,8 +908,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         <section id={SECTION_IDS.assessmentHistory} className="glass-card" style={{ display: 'grid', gap: 20 }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div>
-              <div className="badge">Assessment history</div>
-              <h3 style={{ margin: '12px 0 6px', fontSize: 24, fontWeight: 700 }}>Progress across tests</h3>
+              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Progress across tests</h3>
               <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 520 }}>
                 Review every upload with period filters and trend visuals. Combined averages synthesize growth across the entire roster.
               </p>
@@ -985,8 +982,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
         <section id={SECTION_IDS.assignments} className="glass-card" style={{ display: 'grid', gap: 20 }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div>
-              <div className="badge">Upcoming</div>
-              <h3 style={{ margin: '12px 0 6px', fontSize: 24, fontWeight: 700 }}>Assignments radar</h3>
+              <h3 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 700 }}>Assignments radar</h3>
               <p style={{ margin: 0, color: 'var(--text-muted)', maxWidth: 480 }}>
                 Keep extensions, reteach plans, and mastery celebrations organized in one hub ready for printing.
               </p>

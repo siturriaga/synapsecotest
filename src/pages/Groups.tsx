@@ -292,8 +292,7 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
       <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div>
-            <div className="badge">AI grouping</div>
-            <h2 style={{ margin: '12px 0 0', fontSize: 28, fontWeight: 800 }}>Student groups orchestrated by Gemini</h2>
+            <h2 style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 800 }}>Student groups orchestrated by Gemini</h2>
             <p style={{ color: 'var(--text-muted)', marginTop: 8 }}>{metadata}</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>

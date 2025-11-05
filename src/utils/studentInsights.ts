@@ -42,24 +42,24 @@ export function buildStudentInsight({
   if (typeof latestScore === 'number') {
     const formatted = latestScore.toFixed(1).replace(/\.0$/, '')
     const context = latestAssessment ? ` on ${latestAssessment}` : ''
-    headlineParts.push(`${student.displayName} is working at ${formatted}%${context}.`)
+    headlineParts.push(`${student.displayName} is working around ${formatted}%${context}, giving us a clear snapshot for next steps.`)
     if (typeof classAverage === 'number') {
       const delta = latestScore - classAverage
-      const direction = delta > 0 ? 'above' : delta < 0 ? 'below' : 'right on'
+      const direction = delta > 0 ? 'ahead of' : delta < 0 ? 'just behind' : 'right in step with'
       const magnitude = Math.abs(delta).toFixed(1).replace(/\.0$/, '')
       if (delta !== 0) {
-        headlineParts.push(`That is ${magnitude} pts ${direction} the class average of ${classAverage.toFixed(1)}%.`)
+        headlineParts.push(`That’s about ${magnitude} pts ${direction} the class average of ${classAverage.toFixed(1)}%.`)
       } else {
-        headlineParts.push('That matches the current class average.')
+        headlineParts.push('They are right in step with the current class average.')
       }
     }
   } else {
-    headlineParts.push(`${student.displayName} does not have a recent scored assessment yet. Capture the next checkpoint to personalise support.`)
+    headlineParts.push(`${student.displayName} doesn’t have a recent scored checkpoint yet. Let’s capture the next one together so we can tailor support.`)
   }
 
   if (typeof trendDelta === 'number' && !Number.isNaN(trendDelta) && trendDelta !== 0) {
-    const trendText = trendDelta > 0 ? `▲${trendDelta.toFixed(1)} pts momentum` : `▼${Math.abs(trendDelta).toFixed(1)} pts dip`
-    headlineParts.push(`Recent trajectory shows ${trendText} across the last two assessments.`)
+    const trendText = trendDelta > 0 ? `building ▲${trendDelta.toFixed(1)} pts momentum` : `showing a ▼${Math.abs(trendDelta).toFixed(1)} pts dip`
+    headlineParts.push(`Recent trajectory is ${trendText} across the last two assessments.`)
   }
 
   const highlights: string[] = []
@@ -83,7 +83,7 @@ export function buildStudentInsight({
   if (matchedGroup) {
     const firstPractice = matchedGroup.recommendedPractices[0]
     recommendations.push(
-      `${student.displayName} is in the ${matchedGroup.label.toLowerCase()} cohort (${matchedGroup.range}). ${firstPractice ?? 'Focus on targeted feedback and collaborative routines.'}`
+      `${student.displayName} sits in the ${matchedGroup.label.toLowerCase()} cohort (${matchedGroup.range}). Let’s lean on ${firstPractice ?? 'targeted feedback and collaborative routines'} this week.`
     )
   }
 
@@ -94,7 +94,7 @@ export function buildStudentInsight({
   }
 
   if (!recommendations.length) {
-    recommendations.push('Celebrate strengths during conferences and co-design the next learning target together.')
+    recommendations.push('Celebrate strengths during conferences and co-design the next learning target side by side.')
   }
 
   return {

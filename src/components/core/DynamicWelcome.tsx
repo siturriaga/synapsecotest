@@ -14,7 +14,7 @@ const scenes: Scene[] = [
   {
     id: 'sunrise',
     gradient: 'linear-gradient(140deg, rgba(254,215,170,0.35), rgba(129,140,248,0.2))',
-    caption: 'Line up your goals while the day is fresh — Gemini is ready to draft supports.',
+    caption: 'Morning spark: let’s map today’s wins together and sketch the supports you need.',
     greeting: 'Good morning',
     icon: '🌅',
     iconColor: '#fbbf24'
@@ -22,7 +22,7 @@ const scenes: Scene[] = [
   {
     id: 'day',
     gradient: 'linear-gradient(140deg, rgba(14,165,233,0.28), rgba(59,130,246,0.24))',
-    caption: 'Midday momentum keeps every learner on track with just-in-time insights.',
+    caption: 'Midday boost: grab the right insight, adjust groups, and keep every learner moving.',
     greeting: 'Good afternoon',
     icon: '☀️',
     iconColor: '#fde68a'
@@ -30,7 +30,7 @@ const scenes: Scene[] = [
   {
     id: 'sunset',
     gradient: 'linear-gradient(140deg, rgba(249,115,22,0.28), rgba(168,85,247,0.24))',
-    caption: 'Capture wins, gaps, and reassignment needs before the sun goes down.',
+    caption: 'Evening check-in: jot the wins, note the gaps, and queue tomorrow’s nudges.',
     greeting: 'Good evening',
     icon: '🌇',
     iconColor: '#fb923c'
@@ -38,7 +38,7 @@ const scenes: Scene[] = [
   {
     id: 'night',
     gradient: 'linear-gradient(160deg, rgba(15,118,110,0.28), rgba(99,102,241,0.28))',
-    caption: 'Night mode engaged — prep tomorrow’s breakthroughs with calm clarity.',
+    caption: 'Night shift: slow the pace, reflect, and set up tomorrow’s breakthroughs with calm clarity.',
     greeting: 'Good night',
     icon: '🌙',
     iconColor: '#a5b4fc'
@@ -62,6 +62,7 @@ function getClockRotation(date: Date) {
 
 export function DynamicWelcome() {
   const [now, setNow] = useState(() => new Date())
+  const [isCompact, setIsCompact] = useState(false)
   const { displayName } = usePreferences()
 
   useEffect(() => {
@@ -69,6 +70,29 @@ export function DynamicWelcome() {
       setNow(new Date())
     }, 1_000)
     return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      setIsCompact(false)
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 720px)')
+
+    const updateMatches = () => {
+      setIsCompact(mediaQuery.matches)
+    }
+
+    updateMatches()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateMatches)
+      return () => mediaQuery.removeEventListener('change', updateMatches)
+    }
+
+    mediaQuery.addListener(updateMatches)
+    return () => mediaQuery.removeListener(updateMatches)
   }, [])
 
   const scene = useMemo(() => pickScene(now), [now])
@@ -90,12 +114,13 @@ export function DynamicWelcome() {
   return (
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
+      data-compact={isCompact ? 'true' : undefined}
       style={{
-        marginBottom: 32,
+        marginBottom: isCompact ? 24 : 32,
         backgroundImage: scene.gradient,
-        position: 'sticky',
-        top: 32,
-        zIndex: 5
+        position: isCompact ? 'relative' : 'sticky',
+        top: isCompact ? undefined : 32,
+        zIndex: isCompact ? undefined : 5
       }}
     >
       <div className="welcome-backdrop" aria-hidden>
@@ -112,7 +137,6 @@ export function DynamicWelcome() {
         </div>
       </div>
       <div className="welcome-content">
-        <div className="badge">Workspace welcome</div>
         <h1 className="welcome-title">
           {scene.greeting}
           {displayName ? `, ${displayName}` : ', educator'}.
