@@ -13,17 +13,74 @@ import {
 } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-const firebaseConfig: FirebaseOptions = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+type EnvSource = Record<string, string | undefined>
+
+let envSource: EnvSource = {}
+
+const maybeImportMeta: any = typeof import.meta !== 'undefined' ? import.meta : undefined
+if (maybeImportMeta?.env?.DEV) {
+  envSource = maybeImportMeta.env as EnvSource
+} else if (typeof process !== 'undefined') {
+  envSource = process.env as EnvSource
 }
 
-if (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET) {
-  firebaseConfig.storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
+function readEnv(key: keyof EnvSource): string {
+  const value = envSource?.[key]
+  return typeof value === 'string' ? value : ''
 }
+
+declare global {
+  interface Window {
+    __FIREBASE_CONFIG__?: FirebaseOptions
+  }
+}
+
+function buildEnvConfig(): FirebaseOptions {
+  const config: FirebaseOptions = {
+    apiKey: readEnv('VITE_FIREBASE_API_KEY'),
+    authDomain: readEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+    projectId: readEnv('VITE_FIREBASE_PROJECT_ID'),
+    messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+    appId: readEnv('VITE_FIREBASE_APP_ID')
+  }
+
+  const storageBucket = readEnv('VITE_FIREBASE_STORAGE_BUCKET')
+  if (storageBucket) {
+    config.storageBucket = storageBucket
+  }
+
+  return config
+}
+
+function loadBrowserConfig(): FirebaseOptions | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  if (window.__FIREBASE_CONFIG__) {
+    return window.__FIREBASE_CONFIG__
+  }
+
+  try {
+    const request = new XMLHttpRequest()
+    request.open('GET', '/.netlify/functions/firebase-config', false)
+    request.send()
+
+    if (request.status >= 200 && request.status < 300) {
+      const parsed: FirebaseOptions = JSON.parse(request.responseText)
+      window.__FIREBASE_CONFIG__ = parsed
+      return parsed
+    }
+
+    console.warn('Firebase config request failed', request.status, request.responseText)
+  } catch (error) {
+    console.warn('Unable to load Firebase config from runtime', error)
+  }
+
+  return null
+}
+
+const firebaseConfig = loadBrowserConfig() ?? buildEnvConfig()
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)

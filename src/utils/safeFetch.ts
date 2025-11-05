@@ -47,8 +47,7 @@ async function parseError(response: Response) {
 }
 
 export async function safeFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = await auth.currentUser?.getIdToken?.()
-
+  const user = auth.currentUser ?? null
   const targets: string[] = []
   const appendTarget = (target: string) => {
     if (!targets.includes(target)) {
@@ -72,44 +71,64 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
   }
 
   let lastError: unknown
-  const shouldRetry = (error: unknown, index: number) =>
+  const shouldRetry404 = (error: unknown, index: number) =>
     requestingFunction &&
     error instanceof SafeFetchError &&
     error.status === 404 &&
     index < targets.length - 1
 
-  for (let index = 0; index < targets.length; index += 1) {
-    const target = targets[index]
+  const unauthorizedStatuses = new Set([401, 403, 440])
+  const maxAuthAttempts = user ? 2 : 1
 
-    try {
-      const response = await performFetch(target, options, token)
+  for (let attempt = 0; attempt < maxAuthAttempts; attempt += 1) {
+    const token = user ? await user.getIdToken(attempt === 1) : null
+    let refreshDueToAuth = false
 
-      if (!response.ok) {
-        const error = new SafeFetchError(await parseError(response), response.status)
-        lastError = error
-        if (shouldRetry(error, index)) {
-          continue
-        }
-        throw error
-      }
-
-      const responseClone = response.clone()
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index]
 
       try {
-        return (await response.json()) as T
-      } catch {
-        const text = await responseClone.text()
-        return text as unknown as T
+        const response = await performFetch(target, options, token)
+
+        if (!response.ok) {
+          const error = new SafeFetchError(await parseError(response), response.status)
+          lastError = error
+          if (user && attempt === 0 && unauthorizedStatuses.has(error.status)) {
+            refreshDueToAuth = true
+            break
+          }
+          if (shouldRetry404(error, index)) {
+            continue
+          }
+          throw error
+        }
+
+        const responseClone = response.clone()
+
+        try {
+          return (await response.json()) as T
+        } catch {
+          const text = await responseClone.text()
+          return text as unknown as T
+        }
+      } catch (error) {
+        lastError = error
+        if (refreshDueToAuth) {
+          break
+        }
+        if (shouldRetry404(error, index)) {
+          continue
+        }
+        if (error instanceof Error) {
+          throw error
+        }
+        throw new Error('Request failed')
       }
-    } catch (error) {
-      lastError = error
-      if (shouldRetry(error, index)) {
-        continue
-      }
-      if (error instanceof Error) {
-        throw error
-      }
-      throw new Error('Request failed')
+    }
+
+    if (refreshDueToAuth) {
+      lastError = null
+      continue
     }
   }
 
