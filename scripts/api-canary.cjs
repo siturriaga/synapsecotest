@@ -76,10 +76,77 @@ async function runFallbackScenario() {
   assert.deepEqual(callOrder.slice(0, 2), ['/.netlify/functions/status', '/api/status'])
 }
 
+async function runRemoteBaseScenario() {
+  const callOrder = []
+  const responses = {
+    '/.netlify/functions/demo': new Response('missing', { status: 404 }),
+    '/api/demo': new Response('missing', { status: 404 }),
+    'https://remote.example/.netlify/functions/demo': new Response('missing', { status: 404 }),
+    'https://remote.example/api/demo': new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  global.fetch = async (url) => {
+    callOrder.push(url)
+    if (url === 'http://localhost:8888/.netlify/functions/demo') {
+      throw new TypeError('connect ECONNREFUSED 127.0.0.1:8888')
+    }
+    if (Object.prototype.hasOwnProperty.call(responses, url)) {
+      return responses[url]
+    }
+    throw new Error(`Unexpected target ${url}`)
+  }
+
+  const mockAuth = { currentUser: null }
+  const previousEnv = process.env.VITE_FUNCTION_BASE_URL
+  process.env.VITE_FUNCTION_BASE_URL = 'https://remote.example/api'
+
+  try {
+    const { safeFetch } = loadTsModule('src/utils/safeFetch.ts', {
+      mocks: {
+        '../firebase': { auth: mockAuth }
+      }
+    })
+
+    const result = await safeFetch('/.netlify/functions/demo')
+    assert.deepEqual(result, { ok: true })
+    const expectedOrder = [
+      '/.netlify/functions/demo',
+      '/api/demo',
+      'https://remote.example/.netlify/functions/demo',
+      'https://remote.example/api/demo'
+    ]
+
+    const withoutLocalProxy = callOrder.filter((entry) => entry !== 'http://localhost:8888/.netlify/functions/demo')
+    assert.deepEqual(
+      withoutLocalProxy,
+      expectedOrder,
+      'should exhaust local fallbacks before hitting remote function and api bases'
+    )
+
+    const localProxyIndex = callOrder.indexOf('http://localhost:8888/.netlify/functions/demo')
+    if (localProxyIndex !== -1) {
+      assert(
+        localProxyIndex < callOrder.indexOf('https://remote.example/.netlify/functions/demo'),
+        'local Netlify proxy should be attempted before remote targets'
+      )
+    }
+  } finally {
+    if (previousEnv === undefined) {
+      delete process.env.VITE_FUNCTION_BASE_URL
+    } else {
+      process.env.VITE_FUNCTION_BASE_URL = previousEnv
+    }
+  }
+}
+
 async function main() {
   try {
     await runAuthRefreshScenario()
     await runFallbackScenario()
+    await runRemoteBaseScenario()
     console.log('API canary passed')
   } catch (error) {
     console.error('API canary failed')
