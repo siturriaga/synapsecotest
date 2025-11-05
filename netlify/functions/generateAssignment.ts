@@ -1,6 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
+import { withCors } from './_lib/cors'
 
 type AssessmentQuestion = {
   id: string
@@ -56,6 +57,8 @@ type ClassContext = {
 type GenerateAssignmentRequest = {
   standardCode?: string
   standardName?: string
+  standardClarifications?: unknown
+  standardObjectives?: unknown
   focus?: string
   subject?: string
   grade?: string
@@ -72,6 +75,75 @@ type NormalizedClassGroup = {
   studentCount: number
   recommendedPractices: string[]
   studentNames: string[]
+}
+
+type NormalizedAssignmentError = {
+  statusCode: number
+  error: string
+  detail?: string
+}
+
+function describeError(detail: string | undefined, statusCode: number): string {
+  if (!detail) {
+    return statusCode >= 500
+      ? 'AI assignment generation is temporarily unavailable. Try again shortly.'
+      : 'Assignment generation failed. Please try again.'
+  }
+
+  const normalized = detail.toLowerCase()
+
+  if (normalized.includes('gemini error 429')) {
+    return 'Gemini is receiving too many requests right now. Try again in a moment.'
+  }
+
+  if (normalized.includes('gemini error 4') && normalized.includes('safety')) {
+    return 'Gemini flagged this request. Adjust the prompt and remove sensitive details before retrying.'
+  }
+
+  if (
+    normalized.includes('invalid api key') ||
+    normalized.includes('api key is not set') ||
+    normalized.includes('api key is not configured')
+  ) {
+    return 'Gemini is not configured for this workspace. Contact your administrator.'
+  }
+
+  if (normalized.includes('unable to reach gemini')) {
+    return 'Gemini could not be reached. Check your connection and try again.'
+  }
+
+  if (normalized.includes('gemini returned no text')) {
+    return 'Gemini responded without content. Retry the request.'
+  }
+
+  return detail
+}
+
+function normalizeAssignmentError(error: unknown): NormalizedAssignmentError {
+  let statusCode = 500
+  let detail: string | undefined
+
+  if (error && typeof error === 'object') {
+    const maybeStatus = (error as any).status ?? (error as any).statusCode
+    if (typeof maybeStatus === 'number' && Number.isFinite(maybeStatus) && maybeStatus >= 400) {
+      statusCode = maybeStatus
+    }
+
+    const message = (error as any).message
+    if (typeof message === 'string' && message.trim()) {
+      detail = message.trim()
+    }
+  } else if (typeof error === 'string' && error.trim()) {
+    detail = error.trim()
+  }
+
+  const friendly = describeError(detail, statusCode)
+
+  return {
+    statusCode,
+    error: friendly,
+    detail
+  }
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -113,7 +185,7 @@ function normalizeClassGroups(groups: unknown): NormalizedClassGroup[] {
     .filter((group): group is NormalizedClassGroup => Boolean(group))
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+const baseHandler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -123,6 +195,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     const {
       standardCode,
       standardName,
+      standardClarifications,
+      standardObjectives,
       focus,
       subject,
       grade,
@@ -139,6 +213,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     }
 
     const context: ClassContext = classContext ?? {}
+    const clarifications = normalizeStringArray(standardClarifications).slice(0, 5)
+    const objectives = normalizeStringArray(standardObjectives).slice(0, 5)
     const normalizedGroups = normalizeClassGroups(context.groups)
     const pedagogySummary = context.pedagogy?.summary
       ? context.pedagogy.summary
@@ -166,6 +242,12 @@ export const handler: Handler = async (event: HandlerEvent) => {
           )
           .join('\n')
       : '- No grouped learner insights provided. Design equitable supports across readiness levels.'
+    const clarificationNarrative = clarifications.length
+      ? clarifications.map((item) => `- ${item}`).join('\n')
+      : '- Use the official standard description to determine precise success criteria.'
+    const objectiveNarrative = objectives.length
+      ? objectives.map((item) => `- ${item}`).join('\n')
+      : '- Draft measurable objectives that restate the standard in student-friendly language.'
 
     const prompt = `"""
 You are Synapse, a teacher co-pilot. Design an assessment blueprint that a middle school teacher can deploy immediately.
@@ -176,6 +258,12 @@ Focus: ${focus || 'Use evidence-based instructional strategies.'}
 Assessment type: ${assessmentType}
 Total questions requested: ${questionCount}
 Remediation required: ${includeRemediation ? 'yes' : 'no'}
+
+Standard clarifications:
+${clarificationNarrative}
+
+Learning objectives:
+${objectiveNarrative}
 
 Pedagogical commitments:
 - Summary: ${pedagogySummary}
@@ -235,8 +323,9 @@ Return strict JSON matching exactly:
 Ensure questions are evenly distributed across levels and match the ${assessmentType} format.
 For matching, return options as an array of definitions and use the answer to pair terms.
 For reading_plus, include short evidence-based prompts.
+Explicitly align every question, rationale, remediation step, and AI insight to the provided clarifications and objectives.
 Infuse every element with inclusive, anti-deficit language and emphasize student agency, collaboration, and community relevance.
-Keep responses concise and free of markdown."""`
+Keep responses concise and free of markdown."""`;
 
     const responseText = await callGemini(uid, 'Assessment generated', prompt, 0.5)
     let parsed: AssessmentBlueprint
@@ -295,9 +384,19 @@ Keep responses concise and free of markdown."""`
     }
   } catch (err: any) {
     console.error(err)
+    const normalized = normalizeAssignmentError(err)
     return {
-      statusCode: err.status || 500,
-      body: JSON.stringify({ error: err.message ?? 'Internal error' })
+      statusCode: normalized.statusCode,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: normalized.error,
+        ...(normalized.detail ? { detail: normalized.detail } : {})
+      })
     }
   }
 }
+
+export const handler = withCors(baseHandler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})

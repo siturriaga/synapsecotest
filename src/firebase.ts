@@ -11,7 +11,16 @@ import {
   getRedirectResult,
   setPersistence
 } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, initializeFirestore } from 'firebase/firestore'
+import {
+  API_PREFIX,
+  joinUrl,
+  LOCAL_NETLIFY_ORIGIN,
+  NETLIFY_PREFIX,
+  REMOTE_API_BASE,
+  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
+  REMOTE_FUNCTION_BASE
+} from './utils/netlifyTargets'
 
 type EnvSource = Record<string, string | undefined>
 
@@ -52,6 +61,66 @@ function buildEnvConfig(): FirebaseOptions {
   return config
 }
 
+const FIREBASE_FUNCTION_SEGMENTS = ['firebaseConfig', 'firebase-config'] as const
+
+function isBrowserEnvironment() {
+  return typeof window !== 'undefined'
+}
+
+function buildRuntimeTargets(): string[] {
+  if (!isBrowserEnvironment()) {
+    return []
+  }
+
+  const targets: string[] = []
+  const append = (value: string) => {
+    if (!targets.includes(value)) {
+      targets.push(value)
+    }
+  }
+
+  for (const segment of FIREBASE_FUNCTION_SEGMENTS) {
+    append(`${NETLIFY_PREFIX}${segment}`)
+    append(`${API_PREFIX}${segment}`)
+
+    if (window.location.hostname === 'localhost') {
+      append(`${LOCAL_NETLIFY_ORIGIN}${NETLIFY_PREFIX}${segment}`)
+    }
+
+    const functionPath = segment
+
+    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
+      append(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
+    } else {
+      append(joinUrl(REMOTE_FUNCTION_BASE, `${NETLIFY_PREFIX}${functionPath}`))
+    }
+
+    if (REMOTE_API_BASE) {
+      append(joinUrl(REMOTE_API_BASE, functionPath))
+    }
+  }
+
+  return targets
+}
+
+const REQUIRED_CONFIG_KEYS: Array<keyof FirebaseOptions> = [
+  'apiKey',
+  'authDomain',
+  'projectId',
+  'messagingSenderId',
+  'appId'
+]
+
+function isValidConfig(config: any): config is FirebaseOptions {
+  if (!config || typeof config !== 'object') {
+    return false
+  }
+  return REQUIRED_CONFIG_KEYS.every((key) => {
+    const value = (config as FirebaseOptions)[key]
+    return typeof value === 'string' && value.length > 0
+  })
+}
+
 function loadBrowserConfig(): FirebaseOptions | null {
   if (typeof window === 'undefined') {
     return null
@@ -61,20 +130,38 @@ function loadBrowserConfig(): FirebaseOptions | null {
     return window.__FIREBASE_CONFIG__
   }
 
-  try {
-    const request = new XMLHttpRequest()
-    request.open('GET', '/.netlify/functions/firebase-config', false)
-    request.send()
+  const targets = buildRuntimeTargets()
 
-    if (request.status >= 200 && request.status < 300) {
-      const parsed: FirebaseOptions = JSON.parse(request.responseText)
-      window.__FIREBASE_CONFIG__ = parsed
-      return parsed
+  for (const target of targets) {
+    try {
+      const request = new XMLHttpRequest()
+      request.open('GET', target, false)
+      request.send()
+
+      if (request.status < 200 || request.status >= 300) {
+        console.warn('Firebase config request failed', target, request.status)
+        continue
+      }
+
+      try {
+        const parsed = JSON.parse(request.responseText)
+        if (isValidConfig(parsed)) {
+          window.__FIREBASE_CONFIG__ = parsed
+          return parsed
+        }
+
+        const missing = REQUIRED_CONFIG_KEYS.filter((key) => {
+          const value = (parsed as FirebaseOptions)[key]
+          return typeof value !== 'string' || value.length === 0
+        })
+
+        console.warn('Firebase config response missing fields', target, missing)
+      } catch (error) {
+        console.warn('Unable to parse Firebase config from runtime', target, error)
+      }
+    } catch (error) {
+      console.warn('Unable to load Firebase config from runtime', target, error)
     }
-
-    console.warn('Firebase config request failed', request.status, request.responseText)
-  } catch (error) {
-    console.warn('Unable to load Firebase config from runtime', error)
   }
 
   return null
@@ -84,7 +171,18 @@ const firebaseConfig = loadBrowserConfig() ?? buildEnvConfig()
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+let firestoreInstance: ReturnType<typeof getFirestore>
+try {
+  firestoreInstance = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true
+  })
+} catch (err) {
+  console.warn('Falling back to default Firestore initialization', err)
+  firestoreInstance = getFirestore(app)
+}
+
+export const db = firestoreInstance
 
 const provider = new GoogleAuthProvider()
 provider.setCustomParameters({ prompt: 'select_account' })

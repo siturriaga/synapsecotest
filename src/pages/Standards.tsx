@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import catalog from '../../data/standards/catalog.json'
+import standardDetails from '../../data/standards/details.json'
 import { safeFetch } from '../utils/safeFetch'
 
 interface StandardsPageProps {
@@ -10,6 +11,13 @@ interface StandardsPageProps {
 type Standard = {
   code: string
   name: string
+  clarifications?: string[]
+  objectives?: string[]
+}
+
+type StandardDetails = {
+  clarifications?: string[]
+  objectives?: string[]
 }
 
 type Subject = {
@@ -88,8 +96,20 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
       return
     }
     const standards = subject.grades[gradeLevel]?.standards ?? []
-    setAvailableStandards(standards)
-    setSelected((current) => (standards.some((standard) => standard.code === current?.code) ? current : null))
+    const enrichedStandards = standards.map((entry) => {
+      const detailsForStandard = (standardDetails as Record<string, StandardDetails>)[entry.code] ?? {}
+      return {
+        ...entry,
+        clarifications: Array.isArray(detailsForStandard.clarifications)
+          ? detailsForStandard.clarifications
+          : [],
+        objectives: Array.isArray(detailsForStandard.objectives) ? detailsForStandard.objectives : []
+      }
+    })
+    setAvailableStandards(enrichedStandards)
+    setSelected((current) =>
+      enrichedStandards.some((standard) => standard.code === current?.code) ? current : null
+    )
   }, [subjectId, gradeLevel, subjects])
 
   async function generateLesson() {
@@ -112,7 +132,9 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
             grade: gradeLevel,
             assessmentType: 'reading_plus',
             questionCount: 5,
-            includeRemediation: true
+            includeRemediation: true,
+            standardClarifications: selected.clarifications ?? [],
+            standardObjectives: selected.objectives ?? []
           })
         }
       )
