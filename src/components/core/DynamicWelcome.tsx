@@ -1,5 +1,7 @@
+import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { usePreferences } from '../../hooks/usePreferences'
+import { useRosterData } from '../../hooks/useRosterData'
 
 type Scene = {
   id: 'sunrise' | 'day' | 'sunset'
@@ -65,13 +67,20 @@ export function DynamicWelcome() {
   const [now, setNow] = useState(() => new Date())
   const [isCompact, setIsCompact] = useState(false)
   const [isStickyAllowed, setIsStickyAllowed] = useState(true)
+  const [mounted, setMounted] = useState(false)
+  const [highlightIndex, setHighlightIndex] = useState(0)
   const { displayName } = usePreferences()
+  const roster = useRosterData()
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       setNow(new Date())
     }, 60_000)
     return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    setMounted(true)
   }, [])
 
   useEffect(() => {
@@ -128,10 +137,116 @@ export function DynamicWelcome() {
   )
   const shouldStick = !isCompact && isStickyAllowed
 
+  const metrics = useMemo(() => {
+    const totalStudents = roster?.insights?.totalStudents ?? null
+    const averageScore = roster?.insights?.averageScore ?? null
+    const latestAssessment = roster?.insights?.recentAssessment ?? null
+    const groups = roster?.groupInsights ?? []
+    const foundationGroup = groups.find((group) => group.id === 'foundation')
+    const nonFoundationCount = groups
+      .filter((group) => group.id !== 'foundation')
+      .reduce((total, group) => total + group.studentCount, 0)
+
+    const safePercent = (value: number | null | undefined) => {
+      if (value === null || value === undefined || Number.isNaN(value)) return undefined
+      return Math.max(0, Math.min(100, Number(value)))
+    }
+
+    const formattedDate = latestAssessment?.updatedAt
+      ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(latestAssessment.updatedAt)
+      : roster?.lastSyncedAt
+      ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(roster.lastSyncedAt)
+      : null
+
+    return [
+      {
+        id: 'learners',
+        label: 'Learners synced',
+        value: totalStudents && totalStudents > 0 ? totalStudents.toLocaleString() : 'Awaiting data',
+        detail: formattedDate ? `Updated ${formattedDate}` : 'Connect your roster to unlock insights'
+      },
+      {
+        id: 'mastery',
+        label: 'Average mastery',
+        value: averageScore !== null ? `${averageScore.toFixed(0)}%` : '—',
+        detail: latestAssessment?.testName ?? 'No recent assessment',
+        progress: safePercent(averageScore)
+      },
+      {
+        id: 'momentum',
+        label: 'Learners on track',
+        value: nonFoundationCount > 0 ? `${nonFoundationCount}` : '—',
+        detail:
+          foundationGroup && foundationGroup.studentCount > 0
+            ? `${foundationGroup.studentCount} need focused coaching`
+            : 'All groups trending upward'
+      }
+    ]
+  }, [roster])
+
+  const highlights = useMemo(() => {
+    const items: Array<{ title: string; detail: string }> = []
+    const latestAssessment = roster?.insights?.recentAssessment
+    const topStudent = roster?.insights?.highest
+    const guidance = roster?.pedagogy?.summary
+    const sceneLabel = scene.id === 'sunrise' ? 'Bright start' : scene.id === 'day' ? 'Momentum check' : 'Evening reflection'
+
+    if (latestAssessment?.testName) {
+      items.push({
+        title: `${latestAssessment.testName} snapshot`,
+        detail: `${latestAssessment.studentCount ?? 0} learners • ${
+          latestAssessment.averageScore !== null && latestAssessment.averageScore !== undefined
+            ? `${latestAssessment.averageScore.toFixed(1)}% avg`
+            : 'avg pending'
+        }`
+      })
+    }
+
+    if (topStudent?.name) {
+      items.push({
+        title: 'Spotlight learner',
+        detail: `${topStudent.name} is soaring at ${
+          topStudent.score !== null && topStudent.score !== undefined ? `${topStudent.score.toFixed(1)}%` : 'a personal best'
+        }`
+      })
+    }
+
+    if (guidance) {
+      items.push({
+        title: 'Teaching move',
+        detail: guidance
+      })
+    }
+
+    items.push({
+      title: sceneLabel,
+      detail: scene.caption
+    })
+
+    return items
+  }, [roster?.insights?.recentAssessment, roster?.insights?.highest, roster?.pedagogy?.summary, scene])
+
+  useEffect(() => {
+    if (!highlights.length) return
+    const interval = window.setInterval(() => {
+      setHighlightIndex((current) => (current + 1) % highlights.length)
+    }, 8000)
+    return () => window.clearInterval(interval)
+  }, [highlights])
+
+  useEffect(() => {
+    if (highlightIndex >= highlights.length) {
+      setHighlightIndex(0)
+    }
+  }, [highlightIndex, highlights.length])
+
+  const activeHighlight = highlights[highlightIndex] ?? highlights[0]
+
   return (
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
       data-compact={isCompact ? 'true' : undefined}
+      data-ready={mounted ? 'true' : undefined}
       style={{
         backgroundImage: scene.gradient,
         position: shouldStick ? 'sticky' : 'relative',
@@ -155,6 +270,18 @@ export function DynamicWelcome() {
           </div>
         </div>
         <p className="welcome-caption">{scene.caption}</p>
+        {activeHighlight ? (
+          <div className="welcome-spotlight" aria-live="polite">
+            <span className="welcome-spotlight__badge">Live pulse</span>
+            <div
+              className="welcome-spotlight__content"
+              key={`${activeHighlight.title}-${activeHighlight.detail}`}
+            >
+              <span className="welcome-spotlight__title">{activeHighlight.title}</span>
+              <span className="welcome-spotlight__detail">{activeHighlight.detail}</span>
+            </div>
+          </div>
+        ) : null}
         <div className="welcome-meta">
           <div className="welcome-meta__item">
             <span className="welcome-meta__label">Today</span>
@@ -165,6 +292,24 @@ export function DynamicWelcome() {
             <span className="welcome-meta__label">Staff lounge laugh</span>
             <span className="welcome-meta__value welcome-meta__value--joke">{dailyJoke}</span>
           </div>
+        </div>
+        <div className="welcome-metrics" role="list">
+          {metrics.map((metric) => {
+            const style: CSSProperties | undefined =
+              metric.progress !== undefined ? { '--welcome-progress': `${metric.progress}%` } : undefined
+            return (
+              <div className="welcome-metrics__item" role="listitem" key={metric.id} style={style}>
+                <span className="welcome-metrics__value">{metric.value}</span>
+                <span className="welcome-metrics__label">{metric.label}</span>
+                <span className="welcome-metrics__detail">{metric.detail}</span>
+                {metric.progress !== undefined ? (
+                  <span className="welcome-metrics__progress" aria-hidden>
+                    <span className="welcome-metrics__progress-bar" />
+                  </span>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
       </div>
     </section>
