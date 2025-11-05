@@ -72,6 +72,11 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
   }
 
   let lastError: unknown
+  const shouldRetry = (error: unknown, index: number) =>
+    requestingFunction &&
+    error instanceof SafeFetchError &&
+    error.status === 404 &&
+    index < targets.length - 1
 
   for (let index = 0; index < targets.length; index += 1) {
     const target = targets[index]
@@ -80,11 +85,12 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
       const response = await performFetch(target, options, token)
 
       if (!response.ok) {
-        lastError = new SafeFetchError(await parseError(response), response.status)
-        if (index === targets.length - 1) {
-          throw lastError
+        const error = new SafeFetchError(await parseError(response), response.status)
+        lastError = error
+        if (shouldRetry(error, index)) {
+          continue
         }
-        continue
+        throw error
       }
 
       const responseClone = response.clone()
@@ -97,12 +103,13 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
       }
     } catch (error) {
       lastError = error
-      if (index === targets.length - 1) {
-        if (lastError instanceof Error) {
-          throw lastError
-        }
-        throw new Error('Request failed')
+      if (shouldRetry(error, index)) {
+        continue
       }
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Request failed')
     }
   }
 
