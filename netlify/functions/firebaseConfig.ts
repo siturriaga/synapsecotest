@@ -1,4 +1,5 @@
 import type { Handler } from '@netlify/functions'
+import { withCors } from './_lib/cors'
 
 const REQUIRED_KEYS = {
   apiKey: 'VITE_FIREBASE_API_KEY',
@@ -20,7 +21,7 @@ function readEnv(key: string): string | undefined {
   return undefined
 }
 
-export const handler: Handler = async () => {
+const handler: Handler = async () => {
   const config: Record<string, string> = {}
   const missing: string[] = []
 
@@ -59,3 +60,5 @@ export const handler: Handler = async () => {
     body: JSON.stringify(config)
   }
 }
+
+export const handler = withCors(handler, { methods: ['GET', 'OPTIONS'] })

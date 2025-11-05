@@ -4,6 +4,7 @@ import Busboy from "busboy"; // Corrected import style
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
 import { Buffer } from "buffer"; // Ensure Buffer is available
 import { v4 as uuidv4 } from "uuid";
+import { withCors } from "./_lib/cors"
 
 // This file handles the multipart form data upload
 // The actual file processing happens in processRoster.ts
@@ -12,7 +13,7 @@ function json(statusCode: number, body: unknown): HandlerResponse {
   return { statusCode, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+const handler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
     if (!event.body || !event.isBase64Encoded) return json(400, { error: "Missing multipart body" });
@@ -111,3 +112,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     return json(e.status || 500, { error: e.message || "Internal server error during upload." });
   }
 };
+
+export const handler = withCors(handler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})

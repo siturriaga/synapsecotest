@@ -1,6 +1,7 @@
 import type { Handler } from '@netlify/functions'
 import type { FieldValue } from 'firebase-admin/firestore'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
+import { withCors } from './_lib/cors'
 
 function parsePeriod(value: unknown): number | null {
   if (value === null || value === undefined) return null
@@ -105,7 +106,7 @@ async function recomputeSummary(
   }
 }
 
-export const handler: Handler = async (event) => {
+const handler: Handler = async (event) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -194,3 +195,8 @@ export const handler: Handler = async (event) => {
     }
   }
 }
+
+export const handler = withCors(handler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})

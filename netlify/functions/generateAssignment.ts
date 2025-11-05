@@ -1,6 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
+import { withCors } from './_lib/cors'
 
 type AssessmentQuestion = {
   id: string
@@ -113,7 +114,7 @@ function normalizeClassGroups(groups: unknown): NormalizedClassGroup[] {
     .filter((group): group is NormalizedClassGroup => Boolean(group))
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+const handler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -232,6 +233,11 @@ Return strict JSON matching exactly:
     }
   ]
 }
+
+export const handler = withCors(handler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})
 Ensure questions are evenly distributed across levels and match the ${assessmentType} format.
 For matching, return options as an array of definitions and use the answer to pair terms.
 For reading_plus, include short evidence-based prompts.
