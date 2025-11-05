@@ -43,6 +43,7 @@ export function Sidebar({ user, onSignIn, onSignOut, onDismiss, className, ...re
           <span className="sidebar__logo">⚡</span>
           <span className="sidebar__title">SYNAPSE</span>
         </div>
+        <p className="sidebar__tagline">Gemini-guided workflow hub for mastery-first classrooms.</p>
         <nav className="sidebar__nav">
           {navItems.map((item) => (
             <SidebarLink key={item.href} {...item} onNavigate={onDismiss} />
