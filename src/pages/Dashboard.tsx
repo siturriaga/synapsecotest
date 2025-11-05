@@ -1246,28 +1246,126 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
             )}
           </section>
         </section>
-        <aside className="dashboard-shell__rail" data-visible={workspaceMode === 'focus' ? 'true' : undefined} aria-live="polite">
-          {focusRailCards.map((card) => (
-            <div key={card.id} className="rail-card" style={{ background: card.accent }}>
-              <span className="rail-card__icon" aria-hidden>
-                {card.icon}
-              </span>
-              <div className="rail-card__body">
-                <strong>{card.title}</strong>
-                <span>{card.body}</span>
-                {card.footer && <em>{card.footer}</em>}
-              </div>
+
+        <section id={SECTION_IDS.assessmentHistory} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 520, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Assessment timeline</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Review how each test landed across classes. Filter by period to zoom in, or keep the combined lens to monitor full grade-level momentum.
+              </p>
             </div>
-          ))}
-          {focusRailCards.length === 0 && (
-            <div className="rail-card rail-card--empty">
-              <span className="rail-card__icon" aria-hidden>
-                💤
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <label htmlFor="assessment-period-filter" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                Period focus
+              </label>
+              <select
+                id="assessment-period-filter"
+                value={selectedHistoryPeriod}
+                onChange={(event) => setSelectedHistoryPeriod(event.target.value)}
+                className="table-input"
+                style={{ minWidth: 160 }}
+              >
+                <option value="all">All classes</option>
+                {periodOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {`Period ${option.value}`}
+                  </option>
+                ))}
+              </select>
+              <ClearButton label="Clear history" onClear={handleClearHistory} />
+              <PrintButton targetId={SECTION_IDS.assessmentHistory} label="Print timeline" />
+            </div>
+          </header>
+          <div
+            style={{
+              display: 'grid',
+              gap: 20,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))'
+            }}
+          >
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)', display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                All classes average across tests
               </span>
-              <div className="rail-card__body">
-                <strong>All caught up</strong>
-                <span>Secondary panels minimized — nothing queued right now.</span>
-              </div>
+              <strong style={{ fontSize: 30 }}>{formatPercentage(allClassesAverageAcrossTests)}</strong>
+            </div>
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)' }}>
+              <strong style={{ fontSize: 14, color: 'var(--text-muted)' }}>Combined trend</strong>
+              <ProgressSparkline data={historySeriesAll} stroke="rgba(45,212,191,0.9)" fill="rgba(45,212,191,0.22)" />
+            </div>
+            <div className="glass-subcard" style={{ padding: 18, borderRadius: 18, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.55)' }}>
+              <strong style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+                {selectedHistoryPeriod === 'all' ? 'Period comparison' : `Period ${selectedHistoryPeriod} trend`}
+              </strong>
+              <ProgressSparkline data={historySeriesPeriod} stroke="rgba(129,140,248,0.9)" fill="rgba(129,140,248,0.25)" />
+            </div>
+          </div>
+          <div className="glass-subcard" style={{ padding: 0, borderRadius: 18, border: '1px solid rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+            <table className="table" style={{ margin: 0 }}>
+              <thead>
+                <tr>
+                  <th>Assessment</th>
+                  <th>Period</th>
+                  <th>Avg</th>
+                  <th>High</th>
+                  <th>Low</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assessmentHistoryRows.map((snapshot) => (
+                  <tr key={snapshot.id}>
+                    <td>{snapshot.testName}</td>
+                    <td>{snapshot.period ?? 'All'}</td>
+                    <td>{formatPercentage(snapshot.averageScore ?? null)}</td>
+                    <td>{formatPercentage(snapshot.maxScore ?? null)}</td>
+                    <td>{formatPercentage(snapshot.minScore ?? null)}</td>
+                    <td>{snapshot.updatedAt ? snapshot.updatedAt.toLocaleString() : 'N/A'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id={SECTION_IDS.assignments} className="glass-card" style={{ display: 'grid', gap: 24 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ maxWidth: 520, display: 'grid', gap: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>Assignment planner</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Capture reteach plans, celebrations, and extensions tied to your latest mastery data. Print a snapshot before class or PLC time.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <ClearButton label="Clear assignments" onClear={handleClearAssignments} />
+              <PrintButton targetId={SECTION_IDS.assignments} label="Print assignment planner" />
+            </div>
+          </header>
+          {assignments.length === 0 ? (
+            <div className="empty-state" style={{ marginTop: 4 }}>
+              Create differentiated assignments from any standard to monitor mastery progress here.
+            </div>
+          ) : (
+            <div className="glass-subcard" style={{ padding: 0, borderRadius: 18, border: '1px solid rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+              <table className="table" style={{ margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Assignment</th>
+                    <th>Due date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignments.map((assignment) => (
+                    <tr key={assignment.id}>
+                      <td>{assignment.title}</td>
+                      <td>{assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : 'No due date'}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{assignment.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </aside>
