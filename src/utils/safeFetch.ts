@@ -1,10 +1,13 @@
 import { auth } from '../firebase'
-
-const NETLIFY_PREFIX = '/.netlify/functions/'
-const API_PREFIX = '/api/'
-const LOCAL_NETLIFY_ORIGIN = 'http://localhost:8888'
-const REMOTE_FUNCTION_BASE = (import.meta.env?.VITE_FUNCTION_BASE_URL || 'https://synapsecopilot.com')
-  .replace(/\/$/, '')
+import {
+  API_PREFIX,
+  joinUrl,
+  LOCAL_NETLIFY_ORIGIN,
+  NETLIFY_PREFIX,
+  REMOTE_API_BASE,
+  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
+  REMOTE_FUNCTION_BASE
+} from './netlifyTargets'
 
 class SafeFetchError extends Error {
   status: number
@@ -67,7 +70,16 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
       appendTarget(`${LOCAL_NETLIFY_ORIGIN}${url}`)
     }
 
-    appendTarget(`${REMOTE_FUNCTION_BASE}${url}`)
+    const functionPath = url.startsWith(NETLIFY_PREFIX) ? url.slice(NETLIFY_PREFIX.length) : url
+    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
+      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
+    } else {
+      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, url))
+    }
+
+    if (REMOTE_API_BASE) {
+      appendTarget(joinUrl(REMOTE_API_BASE, functionPath))
+    }
   }
 
   let lastError: unknown
@@ -75,6 +87,11 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
     requestingFunction &&
     error instanceof SafeFetchError &&
     error.status === 404 &&
+    index < targets.length - 1
+
+  const shouldRetryNetworkError = (error: unknown, index: number) =>
+    requestingFunction &&
+    error instanceof TypeError &&
     index < targets.length - 1
 
   const unauthorizedStatuses = new Set([401, 403, 440])
@@ -116,7 +133,7 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
         if (refreshDueToAuth) {
           break
         }
-        if (shouldRetry404(error, index)) {
+        if (shouldRetry404(error, index) || shouldRetryNetworkError(error, index)) {
           continue
         }
         if (error instanceof Error) {

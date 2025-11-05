@@ -24,7 +24,7 @@ for = "/*"
       https://apis.google.com
       https://accounts.google.com;
     img-src 'self' data: https:;
-    style-src 'self' 'unsafe-inline';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src 'self' https://fonts.gstatic.com data:;
     frame-src 'self' https://*.google.com https://*.firebaseapp.com;
     frame-ancestors 'none';

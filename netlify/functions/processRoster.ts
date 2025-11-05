@@ -1,5 +1,6 @@
 // netlify/functions/processRoster.ts
 import type { Handler, HandlerEvent, HandlerContext, HandlerResponse } from "@netlify/functions";
+import { withCors } from "./_lib/cors"
 import { Buffer } from "buffer";
 import { Readable } from "stream";
 import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
@@ -482,7 +483,7 @@ async function parsePDF(buf: Buffer, overrides: Record<string, string>): Promise
   return rows;
 }
 
-export const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
+const baseHandler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   try {
     if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
 
@@ -851,3 +852,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
     return json(e.status || 500, { error: e.message || "Internal error" });
   }
 }
+
+export const handler = withCors(baseHandler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})
