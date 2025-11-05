@@ -222,6 +222,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
 
   const latestScoresByStudent = useMemo(() => {
     const map = new Map<string, { score: number; period: string | null; testName: string | null }>()
+    const seenIdentifiers = new Set<string>()
     const sortedRecords = [...filteredRecords].sort((a, b) => {
       const timeA = a.createdAt ? a.createdAt.getTime() : 0
       const timeB = b.createdAt ? b.createdAt.getTime() : 0
@@ -229,20 +230,25 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
     })
     sortedRecords.forEach((record) => {
       if (typeof record.score !== 'number') return
-      const identifier = record.studentId ?? record.displayName ?? record.id
-      if (!identifier) return
-      if (map.has(identifier)) return
+      const identifiers = [record.studentId, record.displayName, record.id].filter(
+        (value): value is string => Boolean(value)
+      )
+      if (!identifiers.length) return
+      if (identifiers.some((identifier) => seenIdentifiers.has(identifier))) return
+      const primaryIdentifier = identifiers[0]
       let period: string | null = null
       if (record.period !== null && record.period !== undefined) {
         period = String(record.period)
       } else {
         period = studentPeriodLookup.get(record.studentId ?? record.displayName ?? '') ?? null
       }
-      map.set(identifier, {
+      const entry = {
         score: record.score,
         period,
         testName: record.testName ?? null
-      })
+      }
+      map.set(primaryIdentifier, entry)
+      identifiers.forEach((identifier) => seenIdentifiers.add(identifier))
     })
     return map
   }, [filteredRecords, studentPeriodLookup])
