@@ -283,6 +283,123 @@ body[data-micro='off'] .glass-card:hover {
   gap: 24px;
 }
 
+.layout__content {
+  display: grid;
+  gap: 24px;
+  position: relative;
+  z-index: 0;
+}
+
+.layout__alert {
+  margin-bottom: 0;
+}
+
+.layout__topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+  padding: 28px 32px;
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(124, 58, 237, 0.16));
+  box-shadow: 0 32px 80px rgba(8, 11, 30, 0.55);
+  position: relative;
+  overflow: hidden;
+}
+
+.layout__topbar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 12% 24%, rgba(255, 255, 255, 0.16), transparent 55%),
+    radial-gradient(circle at 84% 32%, rgba(59, 130, 246, 0.18), transparent 52%);
+  mix-blend-mode: screen;
+  opacity: 0.65;
+}
+
+.layout__topbar-brand {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+}
+
+.layout__topbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.18);
+  color: rgba(224, 242, 254, 0.94);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.layout__topbar-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.layout__topbar-subtitle {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 16px;
+  max-width: 540px;
+}
+
+.layout__topbar-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.layout__topbar-actions button {
+  white-space: nowrap;
+}
+
+.layout__topbar-user {
+  display: grid;
+  gap: 4px;
+  text-align: right;
+}
+
+.layout__topbar-user-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.layout__topbar-user-email {
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.layout__topbar-user--guest {
+  text-align: right;
+}
+
+@media (max-width: 1280px) {
+  .layout__topbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .layout__topbar-actions {
+    justify-content: space-between;
+  }
+
+  .layout__topbar-user {
+    text-align: left;
+  }
+}
+
 .dashboard-shell {
   display: grid;
   gap: 32px;
@@ -391,6 +508,20 @@ body[data-micro='off'] .glass-card:hover {
 
   .rail-card {
     color: var(--text);
+  }
+}
+
+@media (max-width: 960px) {
+  .layout__main {
+    padding: 24px 20px 96px;
+  }
+
+  .layout__topbar {
+    display: none;
+  }
+
+  .layout__content {
+    gap: 20px;
   }
 }
 
@@ -754,6 +885,13 @@ body[data-font='dyslexia'] {
   font-size: 30px;
   font-weight: 900;
   letter-spacing: 0.08em;
+}
+
+.sidebar__tagline {
+  margin: -12px 0 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .sidebar__logo {

@@ -175,7 +175,11 @@ export const auth = getAuth(app)
 let firestoreInstance: ReturnType<typeof getFirestore>
 try {
   firestoreInstance = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true
+    // QUIC / WebChannel transport regularly fails on restricted networks.
+    // Force the SDK to long-poll immediately so connections succeed without
+    // logging "Receiving end does not exist" noise while Gemini features load.
+    experimentalForceLongPolling: true,
+    useFetchStreams: false
   })
 } catch (err) {
   console.warn('Falling back to default Firestore initialization', err)

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { safeFetch } from '../utils/safeFetch'
+import {
+  generateStudentGroups,
+  type AiApiGroup,
+  type GroupGenerationMode
+} from '../services/aiCoordinator'
 import { useRosterData } from '../hooks/useRosterData'
 import {
   useWorkspaceGroups,
@@ -17,28 +21,6 @@ type RosterStudent = {
   score?: number | null
 }
 
-type ApiGroupStudent = {
-  id?: string | null
-  name?: string | null
-  readiness?: string | null
-  period?: number | null
-  quarter?: string | null
-  score?: number | null | string
-}
-
-type ApiGroup = {
-  id?: string | null
-  name?: string | null
-  rationale?: string | null
-  students?: ApiGroupStudent[]
-}
-
-type GroupResponse = {
-  groups: ApiGroup[]
-  promptChips?: string[]
-  metadata?: { source?: 'heuristic'; reason?: string }
-}
-
 function describeReadiness(score: number | null): string | null {
   if (score === null || Number.isNaN(score)) return null
   if (score >= 85) return `Extending mastery (${Math.round(score)}%)`
@@ -47,9 +29,9 @@ function describeReadiness(score: number | null): string | null {
 }
 
 function normalizeApiGroup(
-  group: ApiGroup,
+  group: AiApiGroup,
   index: number,
-  mode: 'heterogeneous' | 'homogeneous',
+  mode: GroupGenerationMode,
   source: 'gemini' | 'heuristic',
   refinement: string | null
 ): WorkspaceGroup {
@@ -145,7 +127,7 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
   const { groups: savedGroups, loading: savedGroupsLoading, insights, latestRun } = useWorkspaceGroups(user)
   const [optimisticGroups, setOptimisticGroups] = useState<WorkspaceGroup[]>([])
   const [requestLoading, setRequestLoading] = useState(false)
-  const [mode, setMode] = useState<'heterogeneous' | 'homogeneous'>('heterogeneous')
+  const [mode, setMode] = useState<GroupGenerationMode>('heterogeneous')
   const [error, setError] = useState<string | null>(null)
   const [suggestedChips, setSuggestedChips] = useState<string[]>([])
   const [info, setInfo] = useState<string>('')
@@ -200,13 +182,7 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
     setInfo('')
     setOptimisticGroups([])
     try {
-      const response = await safeFetch<GroupResponse>(
-        '/.netlify/functions/groupStudents',
-        {
-          method: 'POST',
-          body: JSON.stringify({ mode })
-        }
-      )
+      const response = await generateStudentGroups({ mode })
       const responseGroups = Array.isArray(response.groups) ? response.groups : []
       const source = response.metadata?.source === 'heuristic' ? 'heuristic' : 'gemini'
       const normalized = responseGroups.map((group, index) =>
@@ -243,13 +219,7 @@ export default function StudentGroupsPage({ user }: { user: User | null }) {
     setError(null)
     setInfo('')
     try {
-      const response = await safeFetch<GroupResponse>(
-        '/.netlify/functions/groupStudents',
-        {
-          method: 'POST',
-          body: JSON.stringify({ mode, refinement: chip })
-        }
-      )
+      const response = await generateStudentGroups({ mode, refinement: chip })
       const responseGroups = Array.isArray(response.groups) ? response.groups : []
       const source = response.metadata?.source === 'heuristic' ? 'heuristic' : 'gemini'
       const normalized = responseGroups.map((group, index) =>
