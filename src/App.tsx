@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import type { User } from 'firebase/auth'
 import { Route, Switch } from 'wouter'
 import { useAuth } from './hooks/useAuth'
 import { Sidebar } from './components/core/Sidebar'
@@ -89,6 +90,7 @@ export default function App() {
             onClick={handleSidebarClose}
           />
           <main className="layout__main">
+            <ExperienceTopBar user={user} onSignIn={actions.signIn} onSignOut={actions.signOut} />
             <div className="layout__mobile-bar">
               <button
                 type="button"
@@ -110,15 +112,66 @@ export default function App() {
                 </button>
               )}
             </div>
-            {authState.error && (
-              <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
-                {authState.error}
-              </div>
-            )}
-            {content}
+            <div className="layout__content">
+              {authState.error && (
+                <div
+                  className="glass-card layout__alert"
+                  role="alert"
+                  style={{ border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}
+                >
+                  {authState.error}
+                </div>
+              )}
+              {content}
+            </div>
           </main>
         </div>
       </PreferencesProvider>
     </RosterDataProvider>
+  )
+}
+
+function ExperienceTopBar({
+  user,
+  onSignIn,
+  onSignOut
+}: {
+  user: User | null
+  onSignIn: () => void
+  onSignOut: () => void
+}) {
+  return (
+    <header className="layout__topbar" aria-label="Workspace status">
+      <div className="layout__topbar-brand">
+        <span className="layout__topbar-pill">Premium AI Workspace</span>
+        <h1 className="layout__topbar-title">Synapse Intelligence Console</h1>
+        <p className="layout__topbar-subtitle">
+          Orchestrate Gemini-powered assignments, groupings, and mastery analytics from a single, unified canvas.
+        </p>
+      </div>
+      <div className="layout__topbar-actions">
+        {user ? (
+          <>
+            <div className="layout__topbar-user" aria-label="Authenticated educator">
+              <span className="layout__topbar-user-name">{user.displayName ?? 'Educator'}</span>
+              <span className="layout__topbar-user-email">{user.email ?? 'Signed in'}</span>
+            </div>
+            <button type="button" className="secondary" onClick={onSignOut}>
+              Log out
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="layout__topbar-user layout__topbar-user--guest" aria-label="Guest mode">
+              <span className="layout__topbar-user-name">Guest mode</span>
+              <span className="layout__topbar-user-email">Sign in to sync Gemini deliverables securely.</span>
+            </div>
+            <button type="button" className="primary" onClick={onSignIn}>
+              Sign in with Google
+            </button>
+          </>
+        )}
+      </div>
+    </header>
   )
 }

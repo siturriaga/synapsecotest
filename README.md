@@ -31,17 +31,27 @@ Set these in Netlify (Build & deploy → Environment):
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY` (use literal `\n` for newlines)
 - `FIREBASE_STORAGE_BUCKET` (optional – enables Firebase Storage uploads; inline base64 storage is used when omitted)
+- `FIREBASE_WEB_API_KEY`
+- `FIREBASE_WEB_APP_ID`
+- `FIREBASE_WEB_AUTH_DOMAIN`
+- `FIREBASE_WEB_MESSAGING_SENDER_ID`
+- `FIREBASE_WEB_PROJECT_ID`
+- `FIREBASE_WEB_STORAGE_BUCKET` (optional – matches the Firebase Storage bucket when configured)
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (optional – defaults to Google’s latest Gemini 1.5 Pro variants with automatic fallbacks)
 - `GEMINI_API_VERSION` (optional – defaults to `v1beta`)
 
-### Client-safe
+### Client-safe / local development
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_APP_ID`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`
+
+> **Note:** Netlify should only receive the `FIREBASE_WEB_*` variables. Keeping the client-side Firebase keys out of the build
+> output prevents secrets scanning from flagging the deploy. Local `.env` files can continue to rely on the `VITE_FIREBASE_*`
+> names for Vite's dev server.
 
 ## Netlify functions
 
