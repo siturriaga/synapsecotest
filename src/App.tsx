@@ -1,8 +1,7 @@
-import { Suspense, lazy, useMemo } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { Route, Switch } from 'wouter'
 import { useAuth } from './hooks/useAuth'
 import { Sidebar } from './components/core/Sidebar'
-import { Header } from './components/core/Header'
 import { RosterDataProvider } from './hooks/useRosterData'
 import { PreferencesProvider } from './hooks/usePreferences'
 const DashboardPage = lazy(() => import('./pages/Dashboard'))
@@ -15,6 +14,44 @@ const SettingsPage = lazy(() => import('./pages/Settings'))
 export default function App() {
   const [authState, actions] = useAuth()
   const user = authState.user
+  const [isSidebarOpen, setSidebarOpen] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mediaQuery = window.matchMedia('(max-width: 960px)')
+    const updateMatches = () => setIsNarrow(mediaQuery.matches)
+    updateMatches()
+    mediaQuery.addEventListener('change', updateMatches)
+    return () => mediaQuery.removeEventListener('change', updateMatches)
+  }, [])
+
+  useEffect(() => {
+    if (!isNarrow) {
+      setSidebarOpen(false)
+    }
+  }, [isNarrow])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (!isNarrow || !isSidebarOpen) {
+      document.body.style.removeProperty('overflow')
+      return
+    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isSidebarOpen, isNarrow])
+
+  const handleSidebarClose = useCallback(() => {
+    setSidebarOpen(false)
+  }, [])
+
+  const handleSidebarToggle = useCallback(() => {
+    setSidebarOpen((value) => !value)
+  }, [])
 
   const content = useMemo(
     () => (
@@ -36,19 +73,50 @@ export default function App() {
   return (
     <RosterDataProvider user={user}>
       <PreferencesProvider user={user}>
-        <div className="layout" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', minHeight: '100vh' }}>
-          <Sidebar user={user} onSignIn={actions.signIn} onSignOut={actions.signOut} />
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-            <Header user={user} />
-            <main style={{ padding: '32px', flex: 1, overflowY: 'auto' }}>
-              {authState.error && (
-                <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
-                  {authState.error}
-                </div>
+        <div className={`layout${isSidebarOpen && isNarrow ? ' layout--sidebar-open' : ''}`}>
+          <Sidebar
+            user={user}
+            onSignIn={actions.signIn}
+            onSignOut={actions.signOut}
+            onDismiss={handleSidebarClose}
+            aria-hidden={isNarrow && !isSidebarOpen ? true : undefined}
+            data-open={isSidebarOpen && isNarrow ? 'true' : undefined}
+          />
+          <button
+            type="button"
+            className="layout__backdrop"
+            aria-hidden={isSidebarOpen ? 'false' : 'true'}
+            onClick={handleSidebarClose}
+          />
+          <main className="layout__main">
+            <div className="layout__mobile-bar">
+              <button
+                type="button"
+                className="mobile-menu-button"
+                aria-label="Toggle navigation"
+                aria-expanded={isSidebarOpen}
+                onClick={handleSidebarToggle}
+              >
+                <span aria-hidden="true">☰</span>
+              </button>
+              <div className="layout__mobile-title">Synapse</div>
+              {user ? (
+                <button type="button" className="mobile-auth-button" onClick={actions.signOut}>
+                  Log out
+                </button>
+              ) : (
+                <button type="button" className="mobile-auth-button" onClick={actions.signIn}>
+                  Sign in
+                </button>
               )}
-              {content}
-            </main>
-          </div>
+            </div>
+            {authState.error && (
+              <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
+                {authState.error}
+              </div>
+            )}
+            {content}
+          </main>
         </div>
       </PreferencesProvider>
     </RosterDataProvider>

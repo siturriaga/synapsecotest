@@ -139,8 +139,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
   return (
     <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
       <section className="glass-card">
-        <div className="badge">Standards library</div>
-        <h2 style={{ margin: '12px 0 6px', fontSize: 28, fontWeight: 800 }}>Browse standards by subject and grade</h2>
+        <h2 style={{ margin: '4px 0 6px', fontSize: 28, fontWeight: 800 }}>Browse standards by subject and grade</h2>
         <p style={{ color: 'var(--text-muted)' }}>Pick a subject, choose the grade, then select the standard you want to target.</p>
         <div style={{ display: 'grid', gap: 16, marginTop: 18 }}>
           <div className="field">
@@ -234,8 +233,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
         {blueprint && (
           <div style={{ display: 'grid', gap: 18 }}>
             <div>
-              <div className="badge">AI overview</div>
-              <h4 style={{ margin: '10px 0 0', fontSize: 20 }}>{blueprint.standardCode} · {blueprint.assessmentType.replace(/_/g, ' ')}</h4>
+              <h4 style={{ margin: '6px 0 0', fontSize: 20 }}>{blueprint.standardCode} · {blueprint.assessmentType.replace(/_/g, ' ')}</h4>
               <p style={{ color: 'var(--text-muted)' }}>{blueprint.aiInsights.overview}</p>
             </div>
             <div className="glass-subcard" style={{ border: '1px solid rgba(148,163,184,0.25)', borderRadius: 18, padding: 18, background: 'rgba(15,23,42,0.55)' }}>

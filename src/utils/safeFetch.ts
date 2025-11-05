@@ -49,51 +49,66 @@ async function parseError(response: Response) {
 export async function safeFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = await auth.currentUser?.getIdToken?.()
 
-  const attempt = async (target: string) => {
-    const response = await performFetch(target, options, token)
-    if (response.ok) {
-      return response
+  const targets: string[] = []
+  const appendTarget = (target: string) => {
+    if (!targets.includes(target)) {
+      targets.push(target)
     }
-    throw new SafeFetchError(await parseError(response), response.status)
   }
 
-  try {
-    const response = await attempt(url)
-    return (await response.json()) as T
-  } catch (error) {
-    const shouldFallback =
-      url.startsWith(NETLIFY_PREFIX) && error instanceof SafeFetchError && error.status === 404
+  appendTarget(url)
 
-    if (!shouldFallback) {
-      throw error
+  const requestingFunction = url.startsWith(NETLIFY_PREFIX)
+  const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
+
+  if (requestingFunction) {
+    appendTarget(`${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`)
+
+    if (isBrowser && window.location.hostname === 'localhost') {
+      appendTarget(`${LOCAL_NETLIFY_ORIGIN}${url}`)
     }
 
-    const fallbackUrl = `${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`
+    appendTarget(`${REMOTE_FUNCTION_BASE}${url}`)
+  }
+
+  let lastError: unknown
+
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index]
 
     try {
-      const response = await attempt(fallbackUrl)
-      return (await response.json()) as T
-    } catch (apiError) {
-      const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
-      const canUseLocalNetlify =
-        isBrowser &&
-        window.location.hostname === 'localhost' &&
-        apiError instanceof SafeFetchError &&
-        apiError.status === 404
+      const response = await performFetch(target, options, token)
 
-      if (canUseLocalNetlify) {
-        const localUrl = `${LOCAL_NETLIFY_ORIGIN}${url}`
-        const response = await attempt(localUrl)
-        return (await response.json()) as T
+      if (!response.ok) {
+        lastError = new SafeFetchError(await parseError(response), response.status)
+        if (index === targets.length - 1) {
+          throw lastError
+        }
+        continue
       }
 
-      if (apiError instanceof SafeFetchError && apiError.status === 404) {
-        const remoteUrl = `${REMOTE_FUNCTION_BASE}${url}`
-        const response = await attempt(remoteUrl)
-        return (await response.json()) as T
-      }
+      const responseClone = response.clone()
 
-      throw apiError
+      try {
+        return (await response.json()) as T
+      } catch {
+        const text = await responseClone.text()
+        return text as unknown as T
+      }
+    } catch (error) {
+      lastError = error
+      if (index === targets.length - 1) {
+        if (lastError instanceof Error) {
+          throw lastError
+        }
+        throw new Error('Request failed')
+      }
     }
   }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Request failed')
 }
