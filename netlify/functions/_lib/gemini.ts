@@ -13,8 +13,8 @@ type GeminiPayload = {
     role: 'user'
     parts: Array<{ text: string }>
   }>
-  safetySettings?: any
-  generationConfig?: GeminiGenerationConfig
+  safety_settings?: any
+  generation_config?: GeminiGenerationConfig
 }
 
 type GeminiRequest = GeminiPayload & { model: string }
@@ -62,8 +62,8 @@ function extractErrorDetail(raw: string | null): string {
 function createGeminiError(status: number, raw: string | null, model?: string): GeminiError {
   const detail = extractErrorDetail(raw)
   const originalStatus = status
-  const normalizedStatus = status >= 400 && status < 500 ? 400 : status
-  const messageBase = detail || `Gemini error ${originalStatus}`
+  const normalizedStatus = status >= 400 && status < 600 ? status : 500
+  const messageBase = detail || `Gemini request failed`
   const message = `Gemini error ${originalStatus}: ${messageBase}`
   const error = new Error(message) as GeminiError
   error.status = normalizedStatus
@@ -117,7 +117,7 @@ export async function callGemini(uid: string, title: string, prompt: string, tem
         parts: [{ text: prompt }]
       }
     ],
-    generationConfig: {
+    generation_config: {
       temperature,
       response_mime_type: 'application/json'
     }
