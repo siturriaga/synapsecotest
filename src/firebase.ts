@@ -61,7 +61,7 @@ function buildEnvConfig(): FirebaseOptions {
   return config
 }
 
-const FIREBASE_FUNCTION_SEGMENT = 'firebase-config'
+const FIREBASE_FUNCTION_SEGMENTS = ['firebaseConfig', 'firebase-config'] as const
 
 function isBrowserEnvironment() {
   return typeof window !== 'undefined'
@@ -79,23 +79,25 @@ function buildRuntimeTargets(): string[] {
     }
   }
 
-  append(`${NETLIFY_PREFIX}${FIREBASE_FUNCTION_SEGMENT}`)
-  append(`${API_PREFIX}${FIREBASE_FUNCTION_SEGMENT}`)
+  for (const segment of FIREBASE_FUNCTION_SEGMENTS) {
+    append(`${NETLIFY_PREFIX}${segment}`)
+    append(`${API_PREFIX}${segment}`)
 
-  if (window.location.hostname === 'localhost') {
-    append(`${LOCAL_NETLIFY_ORIGIN}${NETLIFY_PREFIX}${FIREBASE_FUNCTION_SEGMENT}`)
-  }
+    if (window.location.hostname === 'localhost') {
+      append(`${LOCAL_NETLIFY_ORIGIN}${NETLIFY_PREFIX}${segment}`)
+    }
 
-  const functionPath = FIREBASE_FUNCTION_SEGMENT
+    const functionPath = segment
 
-  if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
-    append(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
-  } else {
-    append(joinUrl(REMOTE_FUNCTION_BASE, `${NETLIFY_PREFIX}${functionPath}`))
-  }
+    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
+      append(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
+    } else {
+      append(joinUrl(REMOTE_FUNCTION_BASE, `${NETLIFY_PREFIX}${functionPath}`))
+    }
 
-  if (REMOTE_API_BASE) {
-    append(joinUrl(REMOTE_API_BASE, functionPath))
+    if (REMOTE_API_BASE) {
+      append(joinUrl(REMOTE_API_BASE, functionPath))
+    }
   }
 
   return targets

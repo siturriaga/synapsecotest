@@ -1,6 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { getAdmin, verifyBearerUid } from './_lib/firebaseAdmin'
 import { callGemini } from './_lib/gemini'
+import { withCors } from './_lib/cors'
 
 type StudentRecord = {
   id: string
@@ -296,7 +297,7 @@ async function logHeuristic(uid: string, groups: NormalizedGroup[], mode: string
   }
 }
 
-export const handler: Handler = async (event: HandlerEvent) => {
+const baseHandler: Handler = async (event: HandlerEvent) => {
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method not allowed' }
@@ -489,3 +490,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     }
   }
 }
+
+export const handler = withCors(baseHandler, {
+  methods: ['POST', 'OPTIONS'],
+  headers: ['Accept', 'Content-Type', 'Authorization']
+})

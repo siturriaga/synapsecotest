@@ -10,6 +10,12 @@ import {
   updateDoc
 } from 'firebase/firestore'
 import catalog from '../../data/standards/catalog.json'
+import standardDetails from '../../data/standards/details.json'
+
+type StandardDetails = {
+  clarifications?: string[]
+  objectives?: string[]
+}
 import { safeFetch } from '../utils/safeFetch'
 import { buildLatestScoresByStudent, buildStudentPeriodLookup } from '../utils/rosterAnalytics'
 import { db } from '../firebase'
@@ -19,7 +25,12 @@ interface AssignmentsPageProps {
   user: User | null
 }
 
-type Standard = { code: string; name: string }
+type Standard = {
+  code: string
+  name: string
+  clarifications?: string[]
+  objectives?: string[]
+}
 
 type Subject = {
   id: string
@@ -228,7 +239,17 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       return
     }
     const standards = subject.grades[gradeLevel]?.standards ?? []
-    setAvailableStandards(standards)
+    const enrichedStandards = standards.map((entry) => {
+      const detailsForStandard = (standardDetails as Record<string, StandardDetails>)[entry.code] ?? {}
+      return {
+        ...entry,
+        clarifications: Array.isArray(detailsForStandard.clarifications)
+          ? detailsForStandard.clarifications
+          : [],
+        objectives: Array.isArray(detailsForStandard.objectives) ? detailsForStandard.objectives : []
+      }
+    })
+    setAvailableStandards(enrichedStandards)
     if (!standards.some((entry) => entry.code === standardCode)) {
       setStandardCode(standards[0]?.code ?? '')
     }
@@ -272,6 +293,8 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
 
     const subjectLabel = subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId
     const standard = availableStandards.find((entry) => entry.code === standardCode)
+    const standardClarifications = standard?.clarifications ?? []
+    const standardObjectives = standard?.objectives ?? []
 
     try {
       setLoading(true)
@@ -287,6 +310,8 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
           assessmentType,
           questionCount,
           includeRemediation,
+          standardClarifications,
+          standardObjectives,
           classContext
         })
       })
