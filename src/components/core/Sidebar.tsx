@@ -1,3 +1,4 @@
+import type { HTMLAttributes } from 'react'
 import { Link, useRoute } from 'wouter'
 import type { User } from 'firebase/auth'
 import { usePreferences } from '../../hooks/usePreferences'
@@ -11,63 +12,89 @@ const navItems = [
   { href: '/settings', label: 'Workspace Settings', icon: '⚙️' }
 ]
 
-export function Sidebar({ user, onSignIn, onSignOut }: { user: User | null; onSignIn: () => void; onSignOut: () => void }) {
+type SidebarProps = {
+  user: User | null
+  onSignIn: () => void
+  onSignOut: () => void
+  onDismiss?: () => void
+} & HTMLAttributes<HTMLElement>
+
+export function Sidebar({ user, onSignIn, onSignOut, onDismiss, className, ...rest }: SidebarProps) {
   const { displayName } = usePreferences()
+  const asideClassName = className ? `sidebar ${className}` : 'sidebar'
+
+  const handleSignIn = () => {
+    onSignIn()
+    onDismiss?.()
+  }
+
+  const handleSignOut = () => {
+    onSignOut()
+    onDismiss?.()
+  }
+
   return (
-    <aside className="sidebar" style={{
-      position: 'sticky',
-      top: 0,
-      alignSelf: 'start',
-      height: '100vh',
-      padding: '32px 28px 28px',
-      borderRight: '1px solid rgba(148, 163, 184, 0.18)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 24,
-      background: 'linear-gradient(160deg, rgba(15, 23, 42, 0.82), rgba(17, 24, 39, 0.95))'
-    }}>
-      <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span className="sidebar__logo">⚡</span>
-        SYNAPSE
-      </div>
-      <nav style={{ display: 'grid', gap: 8 }}>
-        {navItems.map((item) => (
-          <SidebarLink key={item.href} {...item} />
-        ))}
-      </nav>
-      <div style={{ marginTop: 'auto', display: 'grid', gap: 12 }}>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          {user ? (
-            <>
-              <div style={{ fontWeight: 600, color: 'var(--text)' }}>{displayName}</div>
-              <div style={{ opacity: 0.8 }}>{user.email}</div>
-              <div style={{ opacity: 0.8 }}>Secured via Google Sign-In</div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 600 }}>Not signed in</div>
-              <div style={{ opacity: 0.8 }}>Authenticate to unlock Gemini-powered workflows.</div>
-            </>
-          )}
+    <aside className={asideClassName} {...rest}>
+      <div className="sidebar__inner">
+        <button type="button" className="sidebar__close" onClick={onDismiss}>
+          Close
+        </button>
+        <div className="sidebar__brand">
+          <span className="sidebar__logo">⚡</span>
+          <span className="sidebar__title">SYNAPSE</span>
         </div>
-        <div style={{ display: 'grid', gap: 10 }}>
-          {!user ? (
-            <button className="primary" onClick={onSignIn}>Sign in with Google</button>
-          ) : (
-            <button className="secondary" onClick={onSignOut}>Log out</button>
-          )}
+        <nav className="sidebar__nav">
+          {navItems.map((item) => (
+            <SidebarLink key={item.href} {...item} onNavigate={onDismiss} />
+          ))}
+        </nav>
+        <div className="sidebar__footer">
+          <div className="sidebar__account">
+            {user ? (
+              <>
+                <div className="sidebar__account-name">{displayName}</div>
+                <div className="sidebar__account-email">{user.email}</div>
+                <div className="sidebar__account-meta">Secured via Google Sign-In</div>
+              </>
+            ) : (
+              <>
+                <div className="sidebar__account-name">Not signed in</div>
+                <div className="sidebar__account-meta">Authenticate to unlock Gemini-powered workflows.</div>
+              </>
+            )}
+          </div>
+          <div className="sidebar__actions">
+            {!user ? (
+              <button className="primary" onClick={handleSignIn}>
+                Sign in with Google
+              </button>
+            ) : (
+              <button className="secondary" onClick={handleSignOut}>
+                Log out
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>
   )
 }
 
-function SidebarLink({ href, label, icon }: { href: string; label: string; icon: string }) {
+function SidebarLink({ href, label, icon, onNavigate }: { href: string; label: string; icon: string; onNavigate?: () => void }) {
   const [isActive] = useRoute(href === '/' ? '/' : href)
   return (
-    <Link href={href} className="sidebar-link" data-active={isActive ? 'true' : undefined}>
-      <span style={{ fontSize: 18 }}>{icon}</span>
-      <span style={{ fontWeight: 600 }}>{label}</span>
+    <Link
+      href={href}
+      className="sidebar-link"
+      data-active={isActive ? 'true' : undefined}
+      onClick={() => {
+        onNavigate?.()
+      }}
+    >
+      <span className="sidebar-link__icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="sidebar-link__label">{label}</span>
     </Link>
   )
 }
