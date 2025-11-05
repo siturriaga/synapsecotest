@@ -209,16 +209,18 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
   const savingRef = useRef(false)
 
   useEffect(() => {
+    setRecords([])
+    setSummaries([])
+    setStudents([])
+    setUploads([])
+    hasPendingSync.current = false
+    savingRef.current = false
+    setSyncStatus('idle')
+    setSyncError(null)
+    setLastSyncedAt(null)
+
     if (!user) {
-      setRecords([])
-      setSummaries([])
-      setStudents([])
-      setUploads([])
       setLoading(false)
-      hasPendingSync.current = false
-      setSyncStatus('idle')
-      setSyncError(null)
-      setLastSyncedAt(null)
       return
     }
 
