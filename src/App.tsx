@@ -10,6 +10,7 @@ const StudentGroupsPage = lazy(() => import('./pages/Groups'))
 const StandardsEnginePage = lazy(() => import('./pages/Standards'))
 const AssignmentsPage = lazy(() => import('./pages/Assignments'))
 const SettingsPage = lazy(() => import('./pages/Settings'))
+const NotFoundPage = lazy(() => import('./pages/NotFound'))
 
 export default function App() {
   const [authState, actions] = useAuth()
@@ -63,7 +64,7 @@ export default function App() {
           <Route path="/standards" component={() => <StandardsEnginePage user={user} />} />
           <Route path="/assignments" component={() => <AssignmentsPage user={user} />} />
           <Route path="/settings" component={() => <SettingsPage user={user} />} />
-          <Route>Not found</Route>
+          <Route component={NotFoundPage} />
         </Switch>
       </Suspense>
     ),

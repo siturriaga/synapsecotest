@@ -48,6 +48,14 @@ export type RosterInsightEntry = {
   recordedAt: Date | null
 }
 
+export type RosterInsights = {
+  totalStudents: number
+  averageScore: number | null
+  highest: RosterInsightEntry | null
+  lowest: RosterInsightEntry | null
+  recentAssessment: AssessmentSnapshotRecord | null
+}
+
 export type RosterGroupInsight = {
   id: string
   label: string

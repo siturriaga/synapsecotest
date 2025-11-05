@@ -69,8 +69,16 @@ export function DynamicWelcome() {
   const [isStickyAllowed, setIsStickyAllowed] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [highlightIndex, setHighlightIndex] = useState(0)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const { displayName } = usePreferences()
   const roster = useRosterData()
+  const aiContext = roster?.aiContext
+  const isLoading = roster?.loading ?? false
+  const syncError = roster?.syncError
+  const hasInsightData = Boolean(roster?.insights)
+  const hasGroups = (roster?.groupInsights?.length ?? 0) > 0
+  const hasPedagogy = Boolean(roster?.pedagogy)
+  const showEmptyState = !isLoading && !syncError && !hasInsightData && !hasGroups && !hasPedagogy
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -129,6 +137,29 @@ export function DynamicWelcome() {
     return () => mediaQuery.removeListener(updateMatches)
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      setPrefersReducedMotion(false)
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+
+    const updateMatches = () => {
+      setPrefersReducedMotion(mediaQuery.matches)
+    }
+
+    updateMatches()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateMatches)
+      return () => mediaQuery.removeEventListener('change', updateMatches)
+    }
+
+    mediaQuery.addListener(updateMatches)
+    return () => mediaQuery.removeListener(updateMatches)
+  }, [])
+
   const scene = useMemo(() => pickScene(now), [now])
   const dailyJoke = useMemo(() => pickDailyJoke(now), [now])
   const dateString = useMemo(
@@ -138,6 +169,32 @@ export function DynamicWelcome() {
   const shouldStick = !isCompact && isStickyAllowed
 
   const metrics = useMemo(() => {
+    if (isLoading) {
+      return [
+        {
+          id: 'learners',
+          label: 'Learners synced',
+          value: 'Loading…',
+          detail: 'Collecting roster insights',
+          loading: true
+        },
+        {
+          id: 'mastery',
+          label: 'Average mastery',
+          value: 'Loading…',
+          detail: 'Refreshing assessment trends',
+          loading: true
+        },
+        {
+          id: 'momentum',
+          label: 'Learners on track',
+          value: 'Loading…',
+          detail: 'Preparing group momentum view',
+          loading: true
+        }
+      ]
+    }
+
     const totalStudents = roster?.insights?.totalStudents ?? null
     const averageScore = roster?.insights?.averageScore ?? null
     const latestAssessment = roster?.insights?.recentAssessment ?? null
@@ -182,7 +239,7 @@ export function DynamicWelcome() {
             : 'All groups trending upward'
       }
     ]
-  }, [roster])
+  }, [isLoading, roster?.groupInsights, roster?.insights, roster?.lastSyncedAt])
 
   const highlights = useMemo(() => {
     const items: Array<{ title: string; detail: string }> = []
@@ -191,7 +248,10 @@ export function DynamicWelcome() {
     const guidance = roster?.pedagogy?.summary
     const sceneLabel = scene.id === 'sunrise' ? 'Bright start' : scene.id === 'day' ? 'Momentum check' : 'Evening reflection'
 
-    if (latestAssessment?.testName) {
+    const latestLabel = aiContext?.latestAssessmentLabel
+    if (latestLabel) {
+      items.push({ title: 'Latest checkpoint', detail: latestLabel })
+    } else if (latestAssessment?.testName) {
       items.push({
         title: `${latestAssessment.testName} snapshot`,
         detail: `${latestAssessment.studentCount ?? 0} learners • ${
@@ -211,6 +271,10 @@ export function DynamicWelcome() {
       })
     }
 
+    if (syncError) {
+      items.unshift({ title: 'Sync issue', detail: syncError })
+    }
+
     if (guidance) {
       items.push({
         title: 'Teaching move',
@@ -224,15 +288,26 @@ export function DynamicWelcome() {
     })
 
     return items
-  }, [roster?.insights?.recentAssessment, roster?.insights?.highest, roster?.pedagogy?.summary, scene])
+  }, [
+    aiContext?.latestAssessmentLabel,
+    roster?.insights?.recentAssessment,
+    roster?.insights?.highest,
+    roster?.pedagogy?.summary,
+    scene
+  ])
+
+  const highlightRotationEnabled = !prefersReducedMotion && highlights.length > 1
 
   useEffect(() => {
-    if (!highlights.length) return
+    if (!highlightRotationEnabled) {
+      setHighlightIndex(0)
+      return
+    }
     const interval = window.setInterval(() => {
       setHighlightIndex((current) => (current + 1) % highlights.length)
     }, 8000)
     return () => window.clearInterval(interval)
-  }, [highlights])
+  }, [highlightRotationEnabled, highlights.length])
 
   useEffect(() => {
     if (highlightIndex >= highlights.length) {
@@ -241,12 +316,41 @@ export function DynamicWelcome() {
   }, [highlightIndex, highlights.length])
 
   const activeHighlight = highlights[highlightIndex] ?? highlights[0]
+  const statusNotice = useMemo(() => {
+    if (syncError) {
+      return {
+        tone: 'error' as const,
+        label: 'Sync issue',
+        message: syncError
+      }
+    }
+    if (isLoading) {
+      return {
+        tone: 'loading' as const,
+        label: 'Refreshing roster',
+        message: 'Pulling the latest mastery trends…'
+      }
+    }
+    if (showEmptyState) {
+      return {
+        tone: 'info' as const,
+        label: 'Connect your roster',
+        message: 'Upload mastery rosters so the AI can anchor prompts to real class data.'
+      }
+    }
+    return null
+  }, [isLoading, showEmptyState, syncError])
+
+  const highlightKey = activeHighlight ? `${activeHighlight.title}-${activeHighlight.detail}` : 'welcome-highlight'
 
   return (
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
       data-compact={isCompact ? 'true' : undefined}
       data-ready={mounted ? 'true' : undefined}
+      data-loading={isLoading ? 'true' : undefined}
+      data-reduced-motion={prefersReducedMotion ? 'true' : undefined}
+      aria-busy={isLoading ? 'true' : undefined}
       style={{
         backgroundImage: scene.gradient,
         position: shouldStick ? 'sticky' : 'relative',
@@ -270,13 +374,16 @@ export function DynamicWelcome() {
           </div>
         </div>
         <p className="welcome-caption">{scene.caption}</p>
+        {statusNotice ? (
+          <div className={`welcome-status welcome-status--${statusNotice.tone}`} role={syncError ? 'alert' : 'status'}>
+            <span className="welcome-status__label">{statusNotice.label}</span>
+            <span className="welcome-status__message">{statusNotice.message}</span>
+          </div>
+        ) : null}
         {activeHighlight ? (
           <div className="welcome-spotlight" aria-live="polite">
             <span className="welcome-spotlight__badge">Live pulse</span>
-            <div
-              className="welcome-spotlight__content"
-              key={`${activeHighlight.title}-${activeHighlight.detail}`}
-            >
+            <div className="welcome-spotlight__content" key={highlightKey}>
               <span className="welcome-spotlight__title">{activeHighlight.title}</span>
               <span className="welcome-spotlight__detail">{activeHighlight.detail}</span>
             </div>
@@ -298,7 +405,13 @@ export function DynamicWelcome() {
             const style: CSSProperties | undefined =
               metric.progress !== undefined ? { '--welcome-progress': `${metric.progress}%` } : undefined
             return (
-              <div className="welcome-metrics__item" role="listitem" key={metric.id} style={style}>
+              <div
+                className="welcome-metrics__item"
+                role="listitem"
+                key={metric.id}
+                style={style}
+                data-loading={metric.loading ? 'true' : undefined}
+              >
                 <span className="welcome-metrics__value">{metric.value}</span>
                 <span className="welcome-metrics__label">{metric.label}</span>
                 <span className="welcome-metrics__detail">{metric.detail}</span>

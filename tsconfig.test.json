@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "build-tests",
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "jsx": "react-jsx",
+    "target": "ES2019",
+    "types": ["node"]
+  },
+  "include": [
+    "src/utils/aiContext.ts",
+    "src/utils/groupInsights.ts",
+    "src/utils/rosterAnalytics.ts",
+    "src/utils/studentInsights.ts",
+    "src/types/**/*"
+  ],
+  "exclude": ["node_modules", "dist", "build-tests"]
+}
