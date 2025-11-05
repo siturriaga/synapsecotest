@@ -13,16 +13,31 @@ import {
 } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-const firebaseConfig: FirebaseOptions = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+type EnvSource = Record<string, string | undefined>
+
+const envSource: EnvSource =
+  (typeof import.meta !== 'undefined' && (import.meta as any)?.env ? ((import.meta as any).env as EnvSource) : undefined) ??
+  (typeof process !== 'undefined' ? (process.env as EnvSource) : {})
+
+function readEnv(key: keyof EnvSource): string {
+  const value = envSource?.[key]
+  if (typeof value === 'string') {
+    return value
+  }
+  return ''
 }
 
-if (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET) {
-  firebaseConfig.storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
+const firebaseConfig: FirebaseOptions = {
+  apiKey: readEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: readEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: readEnv('VITE_FIREBASE_PROJECT_ID'),
+  messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: readEnv('VITE_FIREBASE_APP_ID')
+}
+
+const storageBucket = readEnv('VITE_FIREBASE_STORAGE_BUCKET')
+if (storageBucket) {
+  firebaseConfig.storageBucket = storageBucket
 }
 
 export const app = initializeApp(firebaseConfig)
