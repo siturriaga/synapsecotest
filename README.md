@@ -5,7 +5,7 @@ This repository contains a production-ready build that matches the Synapse speci
 - Google Sign-In authentication (Firebase) with workspace-scoped Firestore data.
 - Netlify Functions orchestrating secure roster ingestion and Gemini reasoning for grouping and lesson planning.
 - React single-page app with a premium “glass” UI, keyboard-accessible navigation, and form controls with explicit identifiers.
-- No demo placeholders: every action persists to Firebase or triggers a Gemini-backed workflow.
+- No demo stand-ins: every action persists to Firebase or triggers a Gemini-backed workflow.
 
 ## Key decisions
 
@@ -54,13 +54,13 @@ Set these in Netlify (Build & deploy → Environment):
 
 All handlers call `verifyBearerUid` to ensure only authenticated users access data, and failures return structured JSON errors.
 
-## Local development
+## Cloud setup
 
-1. Create `.env` with your `VITE_FIREBASE_*` values.
-2. `npm install` (uses only Firebase + Vite dependencies bundled in repo).
-3. `npm run dev`
-
-Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`; when running locally, either proxy through Netlify (`netlify dev`) or stub responses.
+1. Connect this repository to Netlify and keep the default build command (`npm run build`).
+2. Populate the server-side and client-safe variables above in Netlify → Site configuration → Environment.
+3. Deploy the site and confirm the generated `/api/*` redirect maps to `/.netlify/functions/:splat` as defined in `netlify.toml`.
+4. Sign in with Google on the deployed site, upload a roster, request groups, and generate assignments to confirm Firestore collections update (`dashboard_stats`, `roster`, `groups`, `assignments`, `preferences`, `logs`).
+5. Keep Firebase Auth configured with the Netlify domain so Google sign-in can complete.
 
 ## Deployment checklist
 
