@@ -149,6 +149,17 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
     }
   }
 
+  if (requestingFunction && lastError instanceof SafeFetchError && lastError.status === 404) {
+    throw new SafeFetchError(
+      [
+        'Gemini helper unavailable.',
+        'Start the Netlify Functions server with "npx netlify-cli dev" or set VITE_FUNCTION_BASE_URL',
+        'to a deployed site whose functions are running with your Firebase and Gemini keys.'
+      ].join(' '),
+      lastError.status
+    )
+  }
+
   if (lastError instanceof Error) {
     throw lastError
   }
