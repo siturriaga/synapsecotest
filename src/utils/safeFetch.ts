@@ -50,7 +50,7 @@ function resolveRequestUrl(path: string): string {
 
 export async function safeFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = resolveRequestUrl(path)
-  const user = auth.currentUser ?? null
+  const user = auth?.currentUser ?? null
   const unauthorizedStatuses = new Set([401, 403, 440])
   const maxAttempts = user ? 2 : 1
   let lastError: unknown = null

@@ -9,7 +9,7 @@ type AuthState = {
 }
 
 export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: () => Promise<void> }] {
-  const [state, setState] = useState<AuthState>({ user: auth.currentUser, loading: true })
+  const [state, setState] = useState<AuthState>({ user: auth?.currentUser ?? null, loading: true })
 
   useEffect(() => {
     let mounted = true

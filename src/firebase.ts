@@ -93,20 +93,42 @@ function resolveFirebaseConfig(): FirebaseOptions {
 
 const firebaseConfig = resolveFirebaseConfig()
 
-export const app = initializeApp(firebaseConfig)
-export const auth = getAuth(app)
-
-let firestoreInstance: ReturnType<typeof getFirestore>
+let appInstance: ReturnType<typeof initializeApp> | null = null
 try {
-  firestoreInstance = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true
-  })
+  appInstance = initializeApp(firebaseConfig)
 } catch (error) {
-  console.warn('Falling back to default Firestore initialization', error)
-  firestoreInstance = getFirestore(app)
+  console.error('Failed to initialize Firebase app', error)
 }
 
-export const db = firestoreInstance
+let authInstance: ReturnType<typeof getAuth> | null = null
+if (appInstance && firebaseConfig.apiKey) {
+  try {
+    authInstance = getAuth(appInstance)
+  } catch (error) {
+    console.error('Firebase auth unavailable. Check your VITE_FIREBASE_* configuration.', error)
+  }
+} else {
+  console.warn('Firebase auth disabled. Provide valid VITE_FIREBASE_* values to enable sign-in.')
+}
+
+let firestoreInstance: ReturnType<typeof getFirestore> | null = null
+if (appInstance) {
+  try {
+    firestoreInstance = initializeFirestore(appInstance, {
+      experimentalAutoDetectLongPolling: true
+    })
+  } catch (error) {
+    console.warn('Falling back to default Firestore initialization', error)
+    firestoreInstance = getFirestore(appInstance)
+  }
+}
+
+export const app = appInstance
+export const auth = authInstance
+if (!firestoreInstance) {
+  console.warn('Firestore unavailable. Workspace data features will not load until configuration is fixed.')
+}
+export const db = firestoreInstance as ReturnType<typeof getFirestore>
 
 const provider = new GoogleAuthProvider()
 provider.setCustomParameters({ prompt: 'select_account' })
@@ -123,6 +145,10 @@ function detectPopupRestrictions() {
 }
 
 export async function googleSignIn() {
+  if (!auth) {
+    throw new Error('Google sign-in is not available because Firebase auth is not configured.')
+  }
+
   const authInstance = auth
   try {
     await setPersistence(authInstance, browserLocalPersistence)
@@ -157,12 +183,31 @@ export async function googleSignIn() {
 }
 
 export async function resolveRedirectResult() {
+  if (!auth) {
+    return null
+  }
+
   try {
     return await getRedirectResult(auth)
   } catch (error) {
     console.warn('Redirect sign-in failed', error)
     return null
   }
+}
+
+export async function logout() {
+  if (!auth) {
+    return
+  }
+  await signOut(auth)
+}
+
+export function onAuth(callback: Parameters<typeof onAuthStateChanged>[1]) {
+  if (!auth) {
+    callback(null)
+    return () => {}
+  }
+  return onAuthStateChanged(auth, callback)
 }
 
 export async function logout() {
