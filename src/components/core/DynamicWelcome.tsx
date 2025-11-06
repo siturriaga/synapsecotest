@@ -16,49 +16,53 @@ type Scene = {
   gradient: string
   accent: string
   glow: string
+  canopy: string
   caption: string
   greeting: string
   icon: string
   iconColor: string
-  canopy: string
+  celestial: 'sun' | 'moon'
 }
 
 const scenes: Scene[] = [
   {
     id: 'morning',
     gradient:
-      'linear-gradient(150deg, rgba(245, 253, 255, 0.9) 0%, rgba(165, 243, 252, 0.5) 45%, rgba(244, 114, 182, 0.35) 100%)',
-    accent: 'rgba(56, 189, 248, 0.58)',
-    glow: 'rgba(252, 211, 77, 0.8)',
-    canopy: 'linear-gradient(180deg, rgba(14, 165, 233, 0.12), rgba(59, 130, 246, 0.05))',
-    caption: 'Sunrise stretch: sip the calm, sketch the day, and let your plans bloom with intention.',
+      'linear-gradient(152deg, rgba(248, 250, 252, 0.95) 0%, rgba(191, 219, 254, 0.75) 42%, rgba(147, 197, 253, 0.6) 100%)',
+    accent: 'rgba(59, 130, 246, 0.55)',
+    glow: 'rgba(253, 224, 71, 0.82)',
+    canopy: 'linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(59, 130, 246, 0.08))',
+    caption: 'Morning glimmers pour over the treetops as soft clouds drift and lessons stretch awake.',
     greeting: 'Good morning',
     icon: '🌅',
-    iconColor: '#fb923c'
+    iconColor: '#fbbf24',
+    celestial: 'sun'
   },
   {
     id: 'afternoon',
     gradient:
-      'linear-gradient(160deg, rgba(219, 234, 254, 0.92) 0%, rgba(129, 140, 248, 0.6) 42%, rgba(45, 212, 191, 0.32) 100%)',
-    accent: 'rgba(167, 139, 250, 0.65)',
-    glow: 'rgba(255, 255, 255, 0.65)',
-    canopy: 'linear-gradient(180deg, rgba(34, 211, 238, 0.14), rgba(59, 130, 246, 0.08))',
-    caption: 'Midday momentum: breathe, reset groups, and weave the next conversation with care.',
+      'linear-gradient(165deg, rgba(224, 242, 254, 0.92) 0%, rgba(147, 197, 253, 0.72) 40%, rgba(129, 140, 248, 0.52) 100%)',
+    accent: 'rgba(59, 130, 246, 0.58)',
+    glow: 'rgba(251, 191, 36, 0.7)',
+    canopy: 'linear-gradient(180deg, rgba(96, 165, 250, 0.14), rgba(59, 130, 246, 0.06))',
+    caption: 'Afternoon light shimmers across the grove while ideas gather like gentle breezes.',
     greeting: 'Good afternoon',
     icon: '☀️',
-    iconColor: '#fde68a'
+    iconColor: '#fde68a',
+    celestial: 'sun'
   },
   {
     id: 'evening',
     gradient:
-      'linear-gradient(170deg, rgba(148, 163, 184, 0.92) 0%, rgba(59, 130, 246, 0.65) 38%, rgba(17, 94, 89, 0.55) 100%)',
-    accent: 'rgba(129, 140, 248, 0.75)',
-    glow: 'rgba(96, 165, 250, 0.9)',
-    canopy: 'linear-gradient(180deg, rgba(15, 118, 110, 0.22), rgba(79, 70, 229, 0.16))',
-    caption: 'Evening exhale: slow the pulse, note the wins, and let reflection light the path for tomorrow.',
+      'linear-gradient(178deg, rgba(30, 64, 175, 0.92) 0%, rgba(15, 23, 42, 0.9) 38%, rgba(12, 74, 110, 0.82) 100%)',
+    accent: 'rgba(129, 140, 248, 0.72)',
+    glow: 'rgba(96, 165, 250, 0.86)',
+    canopy: 'linear-gradient(180deg, rgba(30, 64, 175, 0.28), rgba(15, 23, 42, 0.18))',
+    caption: 'Starlight drapes the forest canopy as the night sky paints quiet paths in silver and indigo.',
     greeting: 'Good evening',
     icon: '🌙',
-    iconColor: '#c4b5fd'
+    iconColor: '#c4b5fd',
+    celestial: 'moon'
   }
 ]
 
@@ -73,19 +77,6 @@ type WelcomeStyle = CSSProperties & {
   '--welcome-tilt-y'?: string
 }
 
-const teacherJokes = [
-  'Why did the standards coach carry a ladder? To help every objective reach higher-order thinking.',
-  "I told my class formative checks were my love language—they said, 'That's a lot of love, Ms. G.'", 
-  'Data meeting tip: bring snacks so the pie charts don’t feel like the only slices in the room.',
-  "I tried to take attendance with AI once; it marked me absent for being 'extra.'",
-  'My pacing guide and reality finally met—they’re in counseling now and it’s going great.',
-  'Exit tickets are like boomerangs: toss them with intention and they come back with insight.',
-  'Teacher toolbox item #42: the eyebrow raise that aligns behavior faster than any rubric.',
-  'Told my students we’d spiral review. They asked if that meant field trip to the stairs.',
-  'Standards say “students will.” I say “students already did, wait till you see period 3.”',
-  'Professional development hack: add “student voice” and “joy” to every slide—you’ll always be right.'
-]
-
 function pickScene(date: Date) {
   const hour = date.getHours()
   if (hour >= 5 && hour < 12) return scenes[0]
@@ -97,7 +88,6 @@ export function DynamicWelcome() {
   const [now, setNow] = useState(() => new Date())
   const [isCompact, setIsCompact] = useState(false)
   const [isReady, setIsReady] = useState(false)
-  const [jokeState, setJokeState] = useState(() => ({ index: Math.floor(Math.random() * teacherJokes.length), cycle: 0 }))
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const [lightVector, setLightVector] = useState({ x: 52, y: 46 })
   const [tilt, setTilt] = useState({ x: 0, y: 0 })
@@ -191,7 +181,6 @@ export function DynamicWelcome() {
     [isCompact, scene, lightVector.x, lightVector.y, tilt.x, tilt.y]
   )
 
-  const { index: jokeIndex, cycle: jokeCycle } = jokeState
   const greeting = `${scene.greeting}${displayName ? `, ${displayName}` : ', teacher'}.`
 
   const schedulePointerReset = useCallback(() => {
@@ -287,19 +276,26 @@ export function DynamicWelcome() {
           <div className="welcome-cloud welcome-cloud--one" />
           <div className="welcome-cloud welcome-cloud--two" />
           <div className="welcome-cloud welcome-cloud--three" />
-          <div className="welcome-moon">
-            <span className="welcome-moon__halo" />
-            <span className="welcome-moon__body" />
+          <div className="welcome-celestial" data-type={scene.celestial}>
+            <span className="welcome-celestial__halo" />
+            <span className="welcome-celestial__body" />
+            {scene.celestial === 'sun' ? <span className="welcome-celestial__flare" /> : null}
           </div>
           <div className="welcome-stars">
-            {Array.from({ length: 12 }).map((_, index) => (
+            {Array.from({ length: 18 }).map((_, index) => (
               <span key={index} style={{ '--star-index': index } as CSSProperties} />
+            ))}
+          </div>
+          <div className="welcome-shooting-stars">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <span key={index} style={{ '--shooting-index': index } as CSSProperties} />
             ))}
           </div>
         </div>
         <div className="welcome-forest">
           <div className="welcome-forest__mist" />
           <div className="welcome-forest__line" />
+          <div className="welcome-forest__line welcome-forest__line--mid" />
           <div className="welcome-forest__line welcome-forest__line--near" />
         </div>
         <div className="welcome-fireflies">
@@ -326,12 +322,6 @@ export function DynamicWelcome() {
         <p className="welcome-caption">{scene.caption}</p>
         <div className="welcome-divider" aria-hidden>
           <span />
-        </div>
-        <div className="welcome-joke" role="status" aria-live="polite">
-          <span className="welcome-joke__label">Teacher chuckle</span>
-          <p key={jokeCycle} className="welcome-joke__text">
-            {teacherJokes[jokeIndex]}
-          </p>
         </div>
       </div>
     </section>

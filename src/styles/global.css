@@ -1022,13 +1022,14 @@ body[data-micro='on'] .print-button:hover {
     background-image:
       radial-gradient(
         circle at var(--welcome-light-x, 52%) var(--welcome-light-y, 46%),
-        rgba(255, 255, 255, 0.18),
-        transparent 55%
+        rgba(255, 255, 255, 0.22),
+        transparent 60%
       ),
+      radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.1), transparent 48%),
       var(--welcome-primary, linear-gradient(160deg, rgba(59, 130, 246, 0.4), rgba(15, 118, 110, 0.35)));
-    background-size: 220% 220%, cover;
-    background-position: 50% 50%;
-    background-blend-mode: screen, normal;
+    background-size: 240% 240%, 180% 180%, cover;
+    background-position: 50% 50%, 50% 32%, 50% 50%;
+    background-blend-mode: screen, color-dodge, normal;
     opacity: 0;
     transform: translateY(18px) rotateX(var(--welcome-tilt-x, 0deg)) rotateY(var(--welcome-tilt-y, 0deg));
     transform-style: preserve-3d;
@@ -1053,7 +1054,7 @@ body[data-micro='on'] .print-button:hover {
     inset: -30%;
     pointer-events: none;
     mix-blend-mode: screen;
-    opacity: 0.45;
+    opacity: 0.48;
     transition: opacity 420ms ease;
   }
 
@@ -1076,18 +1077,18 @@ body[data-micro='on'] .print-button:hover {
   }
 
   .dynamic-welcome[data-scene='morning'] {
-    border-color: rgba(59, 130, 246, 0.32);
-    box-shadow: 0 34px 70px rgba(56, 189, 248, 0.38);
+    border-color: rgba(59, 130, 246, 0.28);
+    box-shadow: 0 34px 70px rgba(125, 211, 252, 0.38);
   }
 
   .dynamic-welcome[data-scene='afternoon'] {
-    border-color: rgba(129, 140, 248, 0.32);
-    box-shadow: 0 32px 76px rgba(99, 102, 241, 0.38);
+    border-color: rgba(99, 102, 241, 0.32);
+    box-shadow: 0 32px 76px rgba(129, 140, 248, 0.35);
   }
 
   .dynamic-welcome[data-scene='evening'] {
-    border-color: rgba(148, 163, 184, 0.4);
-    box-shadow: 0 36px 90px rgba(30, 64, 175, 0.48);
+    border-color: rgba(148, 163, 184, 0.45);
+    box-shadow: 0 36px 94px rgba(30, 58, 138, 0.5);
   }
 
   .welcome-atmosphere {
@@ -1128,8 +1129,8 @@ body[data-micro='on'] .print-button:hover {
     height: 160px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.22);
-    filter: blur(10px);
-    opacity: 0.45;
+    filter: blur(12px);
+    opacity: 0.38;
     animation: welcomeCloudFloat 42s linear infinite;
   }
 
@@ -1152,42 +1153,78 @@ body[data-micro='on'] .print-button:hover {
     animation-delay: 12s;
   }
 
-  .welcome-moon {
+  .welcome-celestial {
     position: absolute;
-    top: 18%;
-    right: 12%;
-    width: 120px;
-    height: 120px;
+    top: 16%;
+    right: 14%;
+    width: 140px;
+    height: 140px;
     transform: translateY(-20px);
     opacity: 0;
     transition:
       opacity 900ms ease,
-      transform 900ms ease;
+      transform 900ms ease,
+      filter 900ms ease;
   }
 
-  .welcome-moon__halo,
-  .welcome-moon__body {
+  .welcome-celestial__halo,
+  .welcome-celestial__body,
+  .welcome-celestial__flare {
     position: absolute;
     inset: 0;
     border-radius: 50%;
   }
 
-  .welcome-moon__halo {
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.32), transparent 65%);
-    filter: blur(6px);
+  .welcome-celestial__halo {
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.32), transparent 60%);
+    filter: blur(14px);
+  }
+
+  .welcome-celestial__body {
+    inset: 18%;
+    background: radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.98), rgba(251, 191, 36, 0.88));
+    box-shadow:
+      inset -18px -18px 30px rgba(251, 191, 36, 0.35),
+      0 0 38px rgba(252, 211, 77, 0.28);
+  }
+
+  .welcome-celestial__flare {
+    background: conic-gradient(from 90deg, rgba(255, 255, 255, 0.42), transparent 46%, rgba(255, 255, 255, 0.32));
+    filter: blur(24px);
+    opacity: 0.85;
+  }
+
+  .dynamic-welcome[data-scene='morning'] .welcome-celestial,
+  .dynamic-welcome[data-scene='afternoon'] .welcome-celestial {
     opacity: 0.9;
-    animation: welcomeMoonPulse 8s ease-in-out infinite;
+    transform: translateY(0);
+    filter: drop-shadow(0 0 40px rgba(253, 224, 71, 0.35));
   }
 
-  .welcome-moon__body {
-    inset: 16%;
-    background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(226, 232, 240, 0.8));
-    box-shadow: inset -12px -12px 22px rgba(15, 23, 42, 0.22);
+  .dynamic-welcome[data-scene='morning'] .welcome-celestial__halo,
+  .dynamic-welcome[data-scene='afternoon'] .welcome-celestial__halo {
+    animation: welcomeSunHalo 12s ease-in-out infinite;
   }
 
-  .dynamic-welcome[data-scene='evening'] .welcome-moon {
+  .dynamic-welcome[data-scene='evening'] .welcome-celestial {
     opacity: 1;
     transform: translateY(0);
+    filter: drop-shadow(0 0 46px rgba(148, 163, 184, 0.45));
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-celestial__halo {
+    background: radial-gradient(circle, rgba(148, 163, 184, 0.42), transparent 62%);
+    animation: welcomeMoonGlow 9s ease-in-out infinite;
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-celestial__body {
+    inset: 12%;
+    background: radial-gradient(circle at 40% 30%, rgba(226, 232, 240, 0.95), rgba(148, 163, 184, 0.82));
+    box-shadow: inset -10px -12px 28px rgba(30, 41, 59, 0.48);
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-celestial__flare {
+    display: none;
   }
 
   .welcome-stars {
@@ -1212,7 +1249,43 @@ body[data-micro='on'] .print-button:hover {
   }
 
   .dynamic-welcome[data-scene='evening'] .welcome-stars {
-    opacity: 0.9;
+    opacity: 1;
+  }
+
+  .welcome-shooting-stars {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 800ms ease;
+  }
+
+  .welcome-shooting-stars span {
+    position: absolute;
+    top: calc(10% + var(--shooting-index) * 18%);
+    left: calc(18% + var(--shooting-index) * 22%);
+    width: 140px;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.95), transparent 78%);
+    transform: rotate(-12deg);
+    opacity: 0.8;
+    filter: blur(0.6px);
+    animation: welcomeShootingStar 12s linear infinite;
+    animation-delay: calc(var(--shooting-index) * 3.4s);
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-shooting-stars {
+    opacity: 1;
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-cloud {
+    opacity: 0.18;
+    filter: blur(16px);
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-cloud--three {
+    display: none;
   }
 
   .welcome-forest {
@@ -1248,17 +1321,48 @@ body[data-micro='on'] .print-button:hover {
     animation: welcomeCanopySway 18s ease-in-out infinite;
   }
 
-  .welcome-forest__line--near {
-    bottom: 10%;
-    height: 48%;
-    opacity: 0.85;
-    filter: drop-shadow(0 12px 20px rgba(15, 23, 42, 0.6));
+  .welcome-forest__line--mid {
+    bottom: 18%;
+    height: 58%;
+    opacity: 0.6;
+    filter: drop-shadow(0 10px 16px rgba(15, 23, 42, 0.5));
     animation-duration: 22s;
+    animation-delay: -4s;
+    background:
+      linear-gradient(180deg, rgba(23, 37, 84, 0.6) 0%, rgba(15, 23, 42, 0.92) 100%),
+      repeating-linear-gradient(
+        90deg,
+        rgba(17, 94, 89, 0.32) 0px,
+        rgba(17, 94, 89, 0.32) 3px,
+        transparent 3px,
+        transparent 9px
+      );
+  }
+
+  .welcome-forest__line--near {
+    bottom: 6%;
+    height: 68%;
+    opacity: 0.82;
+    filter: drop-shadow(0 12px 20px rgba(15, 23, 42, 0.58));
+    animation-duration: 16s;
+    animation-delay: -2s;
+    background:
+      linear-gradient(180deg, rgba(17, 24, 39, 0.72) 0%, rgba(15, 23, 42, 0.96) 100%),
+      repeating-linear-gradient(
+        90deg,
+        rgba(12, 74, 110, 0.36) 0px,
+        rgba(12, 74, 110, 0.36) 3px,
+        transparent 3px,
+        transparent 10px
+      );
   }
 
   .welcome-fireflies {
     position: absolute;
     inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 800ms ease;
   }
 
   .welcome-fireflies span {
@@ -1272,6 +1376,28 @@ body[data-micro='on'] .print-button:hover {
     transform: translate3d(0, 0, 0) scale(0.6);
     animation: welcomeFirefly 14s ease-in-out infinite;
     animation-delay: calc(var(--firefly-index) * 0.75s);
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-fireflies {
+    opacity: 1;
+  }
+
+  .dynamic-welcome[data-scene='evening'] .welcome-forest__line,
+  .dynamic-welcome[data-scene='evening'] .welcome-forest__line--mid,
+  .dynamic-welcome[data-scene='evening'] .welcome-forest__line--near {
+    filter: hue-rotate(12deg) saturate(120%);
+  }
+
+  .dynamic-welcome[data-scene='morning'] .welcome-forest__line,
+  .dynamic-welcome[data-scene='morning'] .welcome-forest__line--mid,
+  .dynamic-welcome[data-scene='morning'] .welcome-forest__line--near {
+    filter: hue-rotate(-8deg) saturate(110%);
+  }
+
+  .dynamic-welcome[data-scene='afternoon'] .welcome-forest__line,
+  .dynamic-welcome[data-scene='afternoon'] .welcome-forest__line--mid,
+  .dynamic-welcome[data-scene='afternoon'] .welcome-forest__line--near {
+    filter: hue-rotate(-2deg) saturate(115%);
   }
 
   .welcome-glints {
@@ -1400,29 +1526,6 @@ body[data-micro='on'] .print-button:hover {
     box-shadow: 0 0 24px rgba(255, 255, 255, 0.28);
   }
 
-  .welcome-joke {
-    display: grid;
-    gap: 10px;
-    padding: 20px 24px;
-    border-radius: 20px;
-    background: rgba(15, 23, 42, 0.42);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  }
-
-  .welcome-joke__label {
-    font-size: 0.82rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(148, 163, 184, 0.86);
-  }
-
-  .welcome-joke__text {
-    font-size: 1.08rem;
-    line-height: 1.6;
-    color: rgba(226, 232, 240, 0.94);
-    animation: welcomeJokeFade 900ms ease;
-  }
-
   .dynamic-welcome[data-compact='true'] {
     position: relative;
     top: auto;
@@ -1440,8 +1543,7 @@ body[data-micro='on'] .print-button:hover {
     justify-items: center;
   }
 
-  .dynamic-welcome[data-compact='true'] .welcome-caption,
-  .dynamic-welcome[data-compact='true'] .welcome-joke {
+  .dynamic-welcome[data-compact='true'] .welcome-caption {
     text-align: left;
   }
 
@@ -1513,27 +1615,33 @@ body[data-micro='on'] .print-button:hover {
     }
   }
 
-  @keyframes welcomeMoonPulse {
-    0%,
-    100% {
-      opacity: 0.9;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.7;
-      transform: scale(1.05);
-    }
-  }
-
   @keyframes welcomeStarTwinkle {
     0%,
     100% {
-      opacity: 0.7;
-      transform: scale(1);
+      transform: scale(0.9);
+      opacity: 0.65;
     }
     50% {
+      transform: scale(1.1);
       opacity: 1;
-      transform: scale(1.35);
+    }
+  }
+
+  @keyframes welcomeShootingStar {
+    0% {
+      transform: translate3d(0, 0, 0) rotate(-12deg);
+      opacity: 0;
+    }
+    6% {
+      opacity: 1;
+    }
+    14% {
+      transform: translate3d(220px, 80px, 0) rotate(-12deg);
+      opacity: 0;
+    }
+    100% {
+      transform: translate3d(220px, 80px, 0) rotate(-12deg);
+      opacity: 0;
     }
   }
 
@@ -1571,17 +1679,6 @@ body[data-micro='on'] .print-button:hover {
     }
   }
 
-  @keyframes welcomeJokeFade {
-    0% {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
   @keyframes welcomeGlint {
     0%,
     100% {
@@ -1600,6 +1697,34 @@ body[data-micro='on'] .print-button:hover {
       transform: translate3d(-4px, 6px, 0) scale(0.7);
     }
   }
+
+  @keyframes welcomeSunHalo {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.72;
+    }
+    50% {
+      transform: scale(1.06);
+      opacity: 0.86;
+    }
+  }
+
+  @keyframes welcomeMoonGlow {
+    0%,
+    100% {
+      transform: scale(0.98);
+      opacity: 0.75;
+    }
+    40% {
+      transform: scale(1.04);
+      opacity: 0.95;
+    }
+    70% {
+      transform: scale(1.02);
+      opacity: 0.85;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .dynamic-welcome,
     .dynamic-welcome::before,
@@ -1607,14 +1732,16 @@ body[data-micro='on'] .print-button:hover {
     .welcome-sky__wash,
     .welcome-sky__texture,
     .welcome-cloud,
-    .welcome-moon,
-    .welcome-moon__halo,
+    .welcome-celestial,
+    .welcome-celestial__halo,
     .welcome-stars span,
+    .welcome-shooting-stars span,
     .welcome-forest__mist,
     .welcome-forest__line,
+    .welcome-forest__line--mid,
+    .welcome-forest__line--near,
     .welcome-fireflies span,
-    .welcome-glints span,
-    .welcome-joke__text {
+    .welcome-glints span {
       animation: none !important;
       transition: none !important;
     }
@@ -1636,10 +1763,6 @@ body[data-micro='on'] .print-button:hover {
     text-align: center;
   }
 
-  .dynamic-welcome .welcome-joke {
-    text-align: left;
-    padding: 18px 20px;
-  }
 }
 
 
