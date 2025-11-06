@@ -59,10 +59,12 @@ All handlers call `verifyBearerUid` to ensure only authenticated users access da
 
 ## Local development
 
+1. Create `.env` with your `VITE_FIREBASE_*` values.
 1. Create `.env` with your `VITE_FIREBASE_*` values. Add `VITE_FUNCTION_BASE_URL="https://<your-deployment>.netlify.app"` if you want the browser to call a remote functions host instead of a local Netlify runtime. (Nothing in the repo auto-populates this variable—you need to set it yourself for the app to use that remote helper.)
 2. `npm install` (uses only Firebase + Vite dependencies bundled in repo).
 3. `npm run dev`
 
+Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`; when running locally, either proxy through Netlify (`netlify dev`) or stub responses.
 Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`. You have two options during development:
 
 - **Run Netlify locally** – Use `npx netlify-cli dev` to start Vite and the Netlify Functions runtime together. This is the most transparent workflow when you need live function logs.

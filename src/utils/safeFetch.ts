@@ -1,13 +1,5 @@
 import { auth } from '../firebase'
-import {
-  API_PREFIX,
-  getRemoteApiBase,
-  getRemoteFunctionBase,
-  joinUrl,
-  LOCAL_NETLIFY_ORIGIN,
-  NETLIFY_PREFIX,
-  remoteBaseIncludesFunctionPrefix
-} from './netlifyTargets'
+import { buildFunctionUrl } from './netlifyTargets'
 
 class SafeFetchError extends Error {
   status: number
@@ -43,119 +35,61 @@ async function parseError(response: Response) {
     if (parsed && typeof parsed.error === 'string') {
       return parsed.error
     }
-  } catch (err) {
-    // ignore JSON parse failures; fall back to raw text
+  } catch (error) {
+    // ignore JSON parse failures and fall back to raw text
   }
   return text || `Request failed with status ${response.status}`
 }
 
-export async function safeFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
+function resolveRequestUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+  return buildFunctionUrl(path)
+}
+
+export async function safeFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const url = resolveRequestUrl(path)
   const user = auth.currentUser ?? null
-  const targets: string[] = []
-  const appendTarget = (target: string) => {
-    if (!targets.includes(target)) {
-      targets.push(target)
-    }
-  }
-
-  appendTarget(url)
-
-  const requestingFunction = url.startsWith(NETLIFY_PREFIX)
-  const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
-
-  const remoteFunctionBase = getRemoteFunctionBase()
-  const remoteApiBase = getRemoteApiBase()
-  const remoteIncludesFunctionPrefix = remoteBaseIncludesFunctionPrefix()
-
-  if (requestingFunction) {
-    appendTarget(`${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`)
-
-    if (isBrowser && window.location.hostname === 'localhost') {
-      appendTarget(`${LOCAL_NETLIFY_ORIGIN}${url}`)
-    }
-
-    const functionPath = url.startsWith(NETLIFY_PREFIX) ? url.slice(NETLIFY_PREFIX.length) : url
-    if (remoteFunctionBase) {
-      if (remoteIncludesFunctionPrefix) {
-        appendTarget(joinUrl(remoteFunctionBase, functionPath))
-      } else {
-        appendTarget(joinUrl(remoteFunctionBase, url))
-      }
-    }
-
-    if (remoteApiBase) {
-      appendTarget(joinUrl(remoteApiBase, functionPath))
-    }
-  }
-
-  let lastError: unknown
-  const shouldRetry404 = (error: unknown, index: number) =>
-    requestingFunction &&
-    error instanceof SafeFetchError &&
-    error.status === 404 &&
-    index < targets.length - 1
-
-  const shouldRetryNetworkError = (error: unknown, index: number) =>
-    requestingFunction &&
-    error instanceof TypeError &&
-    index < targets.length - 1
-
   const unauthorizedStatuses = new Set([401, 403, 440])
-  const maxAuthAttempts = user ? 2 : 1
+  const maxAttempts = user ? 2 : 1
+  let lastError: unknown = null
 
-  for (let attempt = 0; attempt < maxAuthAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const token = user ? await user.getIdToken(attempt === 1) : null
-    let refreshDueToAuth = false
+    const shouldRefresh = attempt === 0 && Boolean(user)
 
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index]
-
-      try {
-        const response = await performFetch(target, options, token)
-
-        if (!response.ok) {
-          const error = new SafeFetchError(await parseError(response), response.status)
-          lastError = error
-          if (user && attempt === 0 && unauthorizedStatuses.has(error.status)) {
-            refreshDueToAuth = true
-            break
-          }
-          if (shouldRetry404(error, index)) {
-            continue
-          }
-          throw error
-        }
-
-        const responseClone = response.clone()
-
-        try {
-          return (await response.json()) as T
-        } catch {
-          const text = await responseClone.text()
-          return text as unknown as T
-        }
-      } catch (error) {
+    try {
+      const response = await performFetch(url, options, token)
+      if (!response.ok) {
+        const error = new SafeFetchError(await parseError(response), response.status)
         lastError = error
-        if (refreshDueToAuth) {
-          break
-        }
-        if (shouldRetry404(error, index) || shouldRetryNetworkError(error, index)) {
+        if (shouldRefresh && unauthorizedStatuses.has(error.status)) {
           continue
         }
-        if (error instanceof Error) {
-          throw error
-        }
-        throw new Error('Request failed')
+        throw error
       }
-    }
 
-    if (refreshDueToAuth) {
-      lastError = null
-      continue
+      const clone = response.clone()
+      try {
+        return (await response.json()) as T
+      } catch {
+        const text = await clone.text()
+        return text as unknown as T
+      }
+    } catch (error) {
+      lastError = error
+      if (shouldRefresh && error instanceof SafeFetchError && unauthorizedStatuses.has(error.status)) {
+        continue
+      }
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Request failed')
     }
   }
 
-  if (requestingFunction && lastError instanceof SafeFetchError && lastError.status === 404) {
+  if (lastError instanceof SafeFetchError && lastError.status === 404) {
     throw new SafeFetchError(
       [
         'Gemini helper unavailable.',

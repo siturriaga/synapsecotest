@@ -4,6 +4,7 @@ publish = "dist"
 functions = "netlify/functions"
 
 [functions]
+directory = "netlify/functions"
 external_node_modules = ["firebase-admin","xlsx","mammoth","pdf-parse","busboy"]
 node_bundler = "esbuild"
 

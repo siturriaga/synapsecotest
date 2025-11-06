@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
@@ -83,18 +83,31 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     }
   }
 
+  const defaultHelperDisplay = defaultHelper || 'Local project (/api/*)'
+
+  const buildHelperStatus = useCallback(
+    (nextBase: string) => {
+      const normalizedDefault = defaultHelper || ''
+      if (!nextBase || nextBase === normalizedDefault) {
+        return `Using the default Gemini helper (${defaultHelperDisplay}).`
+      }
+      return `Gemini helper set to ${nextBase}`
+    },
+    [defaultHelper, defaultHelperDisplay]
+  )
+
+  useEffect(() => {
+    setHelperStatus(buildHelperStatus(activeHelper))
+  }, [activeHelper, buildHelperStatus])
+
   function handleHelperSubmit(event: React.FormEvent) {
     event.preventDefault()
     try {
       const trimmed = helperInput.trim()
-      const config = trimmed ? setRemoteFunctionBaseOverride(trimmed) : clearRemoteFunctionBaseOverride()
+      const nextBase = trimmed ? setRemoteFunctionBaseOverride(trimmed) : clearRemoteFunctionBaseOverride()
       setHelperInput(trimmed)
-      setActiveHelper(config.functionBase)
-      setHelperStatus(
-        config.functionBase === defaultHelper
-          ? 'Using the default Gemini helper.'
-          : `Gemini helper set to ${config.functionBase}`
-      )
+      setActiveHelper(nextBase)
+      setHelperStatus(buildHelperStatus(nextBase))
       setHelperError(null)
     } catch (err: any) {
       const message = typeof err?.message === 'string' ? err.message : 'Unable to update Gemini helper.'
@@ -104,10 +117,10 @@ export default function SettingsPage({ user }: SettingsPageProps) {
   }
 
   function handleHelperReset() {
-    const config = clearRemoteFunctionBaseOverride()
+    const base = clearRemoteFunctionBaseOverride()
     setHelperInput('')
-    setActiveHelper(config.functionBase)
-    setHelperStatus('Using the default Gemini helper.')
+    setActiveHelper(base)
+    setHelperStatus(buildHelperStatus(base))
     setHelperError(null)
   }
 
@@ -265,11 +278,11 @@ export default function SettingsPage({ user }: SettingsPageProps) {
                 setHelperError(null)
                 setHelperStatus('')
               }}
-              placeholder={defaultHelper}
+              placeholder={defaultHelper || 'https://your-site.netlify.app'}
               spellCheck={false}
             />
             <small style={{ color: 'var(--text-muted)' }}>
-              Leave blank to fall back to <strong>{defaultHelper}</strong>.
+              Leave blank to fall back to <strong>{defaultHelperDisplay}</strong>.
             </small>
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -295,7 +308,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
           }}
         >
           <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>Active helper</span>
-          <span style={{ wordBreak: 'break-word' }}>{activeHelper}</span>
+          <span style={{ wordBreak: 'break-word' }}>{activeHelper || defaultHelperDisplay}</span>
         </div>
         {helperStatus ? (
           <p style={{ margin: 0, fontWeight: 600 }} className="status-success">
