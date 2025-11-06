@@ -1,62 +1,43 @@
 const NETLIFY_PREFIX = '/.netlify/functions/'
 const API_PREFIX = '/api/'
-const LOCAL_NETLIFY_ORIGIN = 'http://localhost:8888'
-const RAW_REMOTE_FUNCTION_BASE = (import.meta.env?.VITE_FUNCTION_BASE_URL || 'https://synapsecopilot.com').trim()
 
-export type RemoteBaseConfig = {
-  functionBase: string
-  apiBase: string
-  includesFunctionPrefix: boolean
-}
+function normalizePath(path: string): { pathname: string; query: string } {
+  const [rawPath, ...queryParts] = path.split('?')
+  const query = queryParts.length ? queryParts.join('?') : ''
 
-export function normalizeRemoteBase(raw: string): RemoteBaseConfig {
-  const fallback = 'https://synapsecopilot.com'
-  const base = raw ? raw : fallback
-  const withoutTrailingSlash = base.replace(/\/$/, '') || fallback
-
-  const hasFunctionPrefix = /\/\.netlify\/functions(?:\b|\/)/i.test(withoutTrailingSlash)
-  const hasApiPrefix = /\/api(?:\b|\/)/i.test(withoutTrailingSlash)
-
-  const functionBase = (() => {
-    if (hasFunctionPrefix) {
-      return withoutTrailingSlash
-    }
-    if (hasApiPrefix) {
-      return withoutTrailingSlash.replace(/\/api(?:\b|\/)/i, NETLIFY_PREFIX.replace(/\/$/, ''))
-    }
-    return withoutTrailingSlash
-  })()
-
-  const apiBase = (() => {
-    if (hasApiPrefix) {
-      return withoutTrailingSlash
-    }
-    if (/\/\.netlify\/functions(?:\b|\/)/i.test(withoutTrailingSlash)) {
-      return withoutTrailingSlash.replace(/\/\.netlify\/functions(?:\b|\/)/i, API_PREFIX.replace(/\/$/, ''))
-    }
-    return `${withoutTrailingSlash}${API_PREFIX}`
-  })().replace(/\/$/, '')
-
-  return {
-    functionBase: functionBase.replace(/\/$/, ''),
-    apiBase,
-    includesFunctionPrefix: /\/\.netlify\/functions\b/i.test(functionBase)
+  if (/^https?:\/\//i.test(rawPath)) {
+    return { pathname: rawPath, query }
   }
+
+  let pathname = rawPath.trim()
+  if (!pathname) {
+    return { pathname: '', query }
+  }
+
+  pathname = pathname.replace(/^\/+/, '')
+
+  if (pathname.startsWith(NETLIFY_PREFIX.slice(1))) {
+    pathname = pathname.slice(NETLIFY_PREFIX.length - 1)
+  }
+
+  if (pathname.startsWith(API_PREFIX.slice(1))) {
+    pathname = pathname.slice(API_PREFIX.length - 1)
+  }
+
+  pathname = pathname.replace(/^\/+/, '')
+
+  return { pathname, query }
 }
 
-export const REMOTE_BASE_CONFIG = normalizeRemoteBase(RAW_REMOTE_FUNCTION_BASE)
-export const REMOTE_FUNCTION_BASE = REMOTE_BASE_CONFIG.functionBase
-export const REMOTE_API_BASE = REMOTE_BASE_CONFIG.apiBase
-export const REMOTE_BASE_INCLUDES_FUNCTION_PREFIX = REMOTE_BASE_CONFIG.includesFunctionPrefix
+export function buildFunctionUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
 
-export function joinUrl(base: string, path: string) {
-  const normalizedBase = base.replace(/\/$/, '')
-  const normalizedPath = path.replace(/^\//, '')
-  return `${normalizedBase}/${normalizedPath}`
+  const { pathname, query } = normalizePath(path)
+  const base = API_PREFIX
+  const url = pathname ? `${base}${pathname}` : base.replace(/\/$/, '')
+  return query ? `${url}?${query}` : url
 }
 
-export {
-  NETLIFY_PREFIX,
-  API_PREFIX,
-  LOCAL_NETLIFY_ORIGIN
-}
+export { NETLIFY_PREFIX, API_PREFIX }

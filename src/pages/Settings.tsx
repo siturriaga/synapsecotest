@@ -35,6 +35,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     [preferences.texture]
   )
 
+
   useEffect(() => {
     async function loadPreferences() {
       if (!user) {
