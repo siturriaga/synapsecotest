@@ -2,14 +2,14 @@
 
 Think of the app as a teacher calling the front office for help. When you run `netlify dev`, the front office sits on your laptop. If you can’t run that helper, you can instead call the copy that already lives on Netlify by telling the app where that office is.
 
-## Step 1 – make sure the Netlify site knows your secrets
+## Step 1 – give the Netlify site the same secret notes
 
-Open your Netlify site settings and add the same hidden keys you would use on your laptop:
+Imagine you’re leaving town and asking the school office to answer calls for you. You would hand them the class list and the number for Gemini so they can finish the job. Do the same thing here:
 
-- All of the `FIREBASE_*` values (they prove who you are when the function checks your login).
-- `GEMINI_API_KEY` (plus optional `GEMINI_MODEL` or `GEMINI_API_VERSION`).
+- Add every `FIREBASE_*` value to your Netlify site (Settings → Build & deploy → Environment). These prove to the function that the caller is really you.
+- Add `GEMINI_API_KEY` (and optional `GEMINI_MODEL`, `GEMINI_API_VERSION`). That’s the phone number the function dials to reach Gemini.
 
-No secrets on the site = no access to your class list or Gemini, so the request fails.
+No secret notes on the site means the remote helper answers the phone but can’t look up your students or call Gemini back, so the quiz fails.
 
 ## Step 2 – give the browser the address of that site
 
@@ -33,8 +33,12 @@ Install dependencies (`npm install`) and start the app with `npm run dev`. Becau
 
 ## Step 4 – double-check it’s working
 
-Trigger a quiz in the browser and look at the URL in the network tab. You should see the request hitting your Netlify site. If something comes back with a 400 error, the message will spell out what information is missing (for example, “please pick a standard” or “sign in again”).
+Trigger a quiz in the browser and look at the URL in the network tab. You should see the request hitting your Netlify site instead of `localhost`. When the call finds that remote helper, the 404 “Gemini request failed” message disappears because the function is now reachable. If something comes back with a 400 error, the message will spell out what information is missing (for example, “please pick a standard” or “sign in again”).
 
 ## Switching back to your laptop later
 
 Remove or comment out `VITE_FUNCTION_BASE_URL` and run `npx netlify-cli dev`. That brings the helper back to your machine so you can see live logs in the terminal.
+
+## FAQ – “Do I really have to add the secrets to Netlify?”
+
+Yes. When you lean on the remote Netlify site, that site becomes the one phoning Gemini and peeking at your Firestore records. If it doesn’t have the Firebase IDs or the Gemini key, it’s like asking the office to help without giving them the binder—they’ll answer, shrug, and the request stops there. Once you copy the same secrets over, the remote helper knows exactly who’s calling and can finish the quiz without you running Netlify locally.

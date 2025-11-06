@@ -35,7 +35,7 @@ Set these in Netlify (Build & deploy → Environment):
 - `GEMINI_MODEL` (optional – defaults to Google’s latest Gemini 1.5 Pro variants with automatic fallbacks)
 - `GEMINI_API_VERSION` (optional – defaults to `v1beta`)
 
-> **Plain-language tip:** If you tell the app to use a Netlify site on the internet (by setting `VITE_FUNCTION_BASE_URL`), make sure that site already knows the same Firebase and Gemini secrets. Otherwise your quiz request reaches the site, but it can’t prove who you are or talk to Gemini, so it fails.
+> **Plain-language reminder:** If you point the app at a Netlify site on the internet (with `VITE_FUNCTION_BASE_URL`), give that site the very same hidden keys you keep on your laptop. Think of it like handing the substitute teacher the class roster and the Gemini password—without those notes, the remote helper picks up the phone but has no idea who you are or how to call Gemini back, so the quiz request dies.
 
 ### Client-safe
 - `VITE_FIREBASE_API_KEY`
@@ -66,7 +66,7 @@ All handlers call `verifyBearerUid` to ensure only authenticated users access da
 Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`. You have two options during development:
 
 - **Run Netlify locally** – Use `npx netlify-cli dev` to start Vite and the Netlify Functions runtime together. This is the most transparent workflow when you need live function logs.
-- **Reuse a deployed host** – Define `VITE_FUNCTION_BASE_URL` so the app targets your deployed Netlify Functions instead of `localhost:8888`. This avoids 404s when you can't run the Netlify CLI but still requires the remote environment to have the Firebase and Gemini secrets configured.
+- **Reuse a deployed host** – Define `VITE_FUNCTION_BASE_URL` so the app targets your deployed Netlify Functions instead of `localhost:8888`. Once that URL is in place, the quiz call stops returning the “Gemini request failed” 404 because it can finally reach the live function. The remote environment still needs the Firebase and Gemini secrets configured.
 
 ## Deployment checklist
 
