@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent
+} from 'react'
 import { usePreferences } from '../../hooks/usePreferences'
 
 type SceneId = 'morning' | 'afternoon' | 'evening'
@@ -54,17 +62,15 @@ const scenes: Scene[] = [
   }
 ]
 
-type AmbientState = {
-  context: AudioContext
-  nodes: Array<AudioBufferSourceNode | OscillatorNode>
-  gain: GainNode
-}
-
 type WelcomeStyle = CSSProperties & {
   '--welcome-primary'?: string
   '--welcome-accent'?: string
   '--welcome-glow'?: string
   '--welcome-canopy'?: string
+  '--welcome-light-x'?: string
+  '--welcome-light-y'?: string
+  '--welcome-tilt-x'?: string
+  '--welcome-tilt-y'?: string
 }
 
 const teacherJokes = [
@@ -92,9 +98,12 @@ export function DynamicWelcome() {
   const [isCompact, setIsCompact] = useState(false)
   const [isReady, setIsReady] = useState(false)
   const [jokeState, setJokeState] = useState(() => ({ index: Math.floor(Math.random() * teacherJokes.length), cycle: 0 }))
-  const [ambientState, setAmbientState] = useState<{ isPlaying: boolean; error?: string }>({ isPlaying: false })
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
-  const ambientRef = useRef<AmbientState | null>(null)
+  const [lightVector, setLightVector] = useState({ x: 52, y: 46 })
+  const [tilt, setTilt] = useState({ x: 0, y: 0 })
+  const pointerTimeoutRef = useRef<number | undefined>(undefined)
+  const pointerActiveRef = useRef(false)
+  const cardRef = useRef<HTMLElement | null>(null)
   const { displayName } = usePreferences()
 
   useEffect(() => {
@@ -162,35 +171,6 @@ export function DynamicWelcome() {
     return () => window.clearInterval(interval)
   }, [prefersReducedMotion])
 
-  useEffect(() => {
-    return () => {
-      if (ambientRef.current) {
-        const { context, nodes, gain } = ambientRef.current
-        try {
-          gain.gain.cancelScheduledValues(context.currentTime)
-          gain.gain.linearRampToValueAtTime(0.0001, context.currentTime + 0.6)
-        } catch (error) {
-          console.error('DynamicWelcome ambient teardown error:', error)
-        }
-        window.setTimeout(() => {
-          nodes.forEach((node) => {
-            try {
-              if ('stop' in node) {
-                node.stop()
-              }
-            } catch (error) {
-              console.error('DynamicWelcome ambient node stop error:', error)
-            }
-          })
-          context.close().catch((error) => {
-            console.error('DynamicWelcome ambient context close error:', error)
-          })
-          ambientRef.current = null
-        }, 650)
-      }
-    }
-  }, [])
-
   const scene = useMemo(() => pickScene(now), [now])
 
   const welcomeStyle = useMemo<WelcomeStyle>(
@@ -199,168 +179,94 @@ export function DynamicWelcome() {
       '--welcome-accent': scene.accent,
       '--welcome-glow': scene.glow,
       '--welcome-canopy': scene.canopy,
+      '--welcome-light-x': `${lightVector.x}%`,
+      '--welcome-light-y': `${lightVector.y}%`,
+      '--welcome-tilt-x': `${tilt.x}deg`,
+      '--welcome-tilt-y': `${tilt.y}deg`,
       marginBottom: isCompact ? 24 : 32,
       position: isCompact ? 'relative' : 'sticky',
       top: isCompact ? undefined : 32,
       zIndex: isCompact ? undefined : 5
     }),
-    [isCompact, scene]
+    [isCompact, scene, lightVector.x, lightVector.y, tilt.x, tilt.y]
   )
-
-  const toggleAmbient = useCallback(async () => {
-    if (ambientState.isPlaying) {
-      const ambient = ambientRef.current
-      if (!ambient) {
-        setAmbientState({ isPlaying: false })
-        return
-      }
-
-      const { context, gain } = ambient
-      try {
-        gain.gain.cancelScheduledValues(context.currentTime)
-        gain.gain.linearRampToValueAtTime(0.0001, context.currentTime + 0.8)
-      } catch (error) {
-        console.error('DynamicWelcome ambient fade error:', error)
-      }
-      window.setTimeout(() => {
-        ambient.nodes.forEach((node) => {
-          try {
-            if ('stop' in node) {
-              node.stop()
-            }
-          } catch (error) {
-            console.error('DynamicWelcome ambient node stop error:', error)
-          }
-        })
-        ambient.context.close().catch((error) => {
-          console.error('DynamicWelcome ambient context close error:', error)
-        })
-        ambientRef.current = null
-      }, 900)
-      setAmbientState({ isPlaying: false })
-      return
-    }
-
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-
-    if (!AudioCtor) {
-      setAmbientState({ isPlaying: false, error: 'Audio context is unavailable in this browser.' })
-      return
-    }
-
-    try {
-      const context = new AudioCtor()
-      const gain = context.createGain()
-      gain.gain.value = 0.0001
-      gain.connect(context.destination)
-
-      const noiseBuffer = context.createBuffer(1, context.sampleRate * 3, context.sampleRate)
-      const data = noiseBuffer.getChannelData(0)
-      for (let i = 0; i < data.length; i += 1) {
-        data[i] = (Math.random() * 2 - 1) * 0.42
-      }
-
-      const noiseSource = context.createBufferSource()
-      noiseSource.buffer = noiseBuffer
-      noiseSource.loop = true
-
-      const noiseFilter = context.createBiquadFilter()
-      noiseFilter.type = 'bandpass'
-      noiseFilter.frequency.value = 620
-      noiseFilter.Q.value = 0.9
-
-      const noiseGain = context.createGain()
-      noiseGain.gain.value = 0.15
-
-      noiseSource.connect(noiseFilter)
-      noiseFilter.connect(noiseGain)
-      noiseGain.connect(gain)
-
-      const breezeLfo = context.createOscillator()
-      breezeLfo.type = 'sine'
-      breezeLfo.frequency.value = 0.08
-
-      const breezeDepth = context.createGain()
-      breezeDepth.gain.value = 0.08
-      breezeLfo.connect(breezeDepth)
-      breezeDepth.connect(noiseGain.gain)
-
-      const chimeOsc = context.createOscillator()
-      chimeOsc.type = 'sine'
-      chimeOsc.frequency.value = 740
-
-      const chimeGain = context.createGain()
-      chimeGain.gain.value = 0
-
-      const chimeLfo = context.createOscillator()
-      chimeLfo.type = 'sine'
-      chimeLfo.frequency.value = 0.04
-
-      const chimeDepth = context.createGain()
-      chimeDepth.gain.value = 0.04
-
-      chimeLfo.connect(chimeDepth)
-      chimeDepth.connect(chimeGain.gain)
-
-      chimeOsc.connect(chimeGain)
-      chimeGain.connect(gain)
-
-      const shimmerOsc = context.createOscillator()
-      shimmerOsc.type = 'sine'
-      shimmerOsc.frequency.value = 1100
-
-      const shimmerGain = context.createGain()
-      shimmerGain.gain.value = 0
-
-      const shimmerLfo = context.createOscillator()
-      shimmerLfo.type = 'sine'
-      shimmerLfo.frequency.value = 0.065
-
-      const shimmerDepth = context.createGain()
-      shimmerDepth.gain.value = 0.03
-
-      shimmerLfo.connect(shimmerDepth)
-      shimmerDepth.connect(shimmerGain.gain)
-
-      shimmerOsc.connect(shimmerGain)
-      shimmerGain.connect(gain)
-
-      if (context.state === 'suspended') {
-        try {
-          await context.resume()
-        } catch (error) {
-          console.error('DynamicWelcome ambient resume error:', error)
-        }
-      }
-
-      noiseSource.start()
-      breezeLfo.start()
-      chimeOsc.start()
-      chimeLfo.start()
-      shimmerOsc.start()
-      shimmerLfo.start()
-
-      gain.gain.linearRampToValueAtTime(0.22, context.currentTime + 1.6)
-
-      ambientRef.current = {
-        context,
-        nodes: [noiseSource, breezeLfo, chimeOsc, chimeLfo, shimmerOsc, shimmerLfo],
-        gain
-      }
-
-      setAmbientState({ isPlaying: true })
-    } catch (error) {
-      console.error('DynamicWelcome ambient start error:', error)
-      setAmbientState({ isPlaying: false, error: 'Unable to start ambient sound. Please try again.' })
-    }
-  }, [ambientState.isPlaying])
 
   const { index: jokeIndex, cycle: jokeCycle } = jokeState
   const greeting = `${scene.greeting}${displayName ? `, ${displayName}` : ', teacher'}.`
+
+  const schedulePointerReset = useCallback(() => {
+    window.clearTimeout(pointerTimeoutRef.current)
+    pointerTimeoutRef.current = window.setTimeout(() => {
+      pointerActiveRef.current = false
+      setTilt({ x: 0, y: 0 })
+    }, 2600)
+  }, [])
+
+  const handlePointer = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (prefersReducedMotion) {
+        return
+      }
+
+      const card = cardRef.current
+      if (!card) {
+        return
+      }
+
+      const rect = card.getBoundingClientRect()
+      const xRatio = (event.clientX - rect.left) / rect.width
+      const yRatio = (event.clientY - rect.top) / rect.height
+
+      const clampedX = Math.min(Math.max(xRatio, 0), 1)
+      const clampedY = Math.min(Math.max(yRatio, 0), 1)
+
+      setLightVector({ x: clampedX * 100, y: clampedY * 100 })
+      setTilt({ x: (0.5 - clampedY) * 6, y: (clampedX - 0.5) * 8 })
+
+      pointerActiveRef.current = true
+      schedulePointerReset()
+    },
+    [prefersReducedMotion, schedulePointerReset]
+  )
+
+  const handlePointerLeave = useCallback(() => {
+    pointerActiveRef.current = false
+    window.clearTimeout(pointerTimeoutRef.current)
+    setTilt({ x: 0, y: 0 })
+  }, [])
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setTilt({ x: 0, y: 0 })
+      setLightVector({ x: 52, y: 46 })
+      return
+    }
+
+    let frame = 0
+    const animate = (time: number) => {
+      if (!pointerActiveRef.current) {
+        const nextX = 50 + Math.sin(time / 3400) * 12
+        const nextY = 46 + Math.cos(time / 3800) * 10
+
+        setLightVector((prev) => {
+          if (Math.abs(prev.x - nextX) < 0.2 && Math.abs(prev.y - nextY) < 0.2) {
+            return prev
+          }
+          return { x: nextX, y: nextY }
+        })
+      }
+      frame = window.requestAnimationFrame(animate)
+    }
+
+    frame = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frame)
+  }, [prefersReducedMotion])
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(pointerTimeoutRef.current)
+    }
+  }, [])
 
   return (
     <section
@@ -369,6 +275,10 @@ export function DynamicWelcome() {
       data-ready={isReady ? 'true' : undefined}
       data-scene={scene.id}
       style={welcomeStyle}
+      ref={cardRef}
+      onPointerMove={handlePointer}
+      onPointerDown={handlePointer}
+      onPointerLeave={handlePointerLeave}
     >
       <div className="welcome-atmosphere" aria-hidden>
         <div className="welcome-sky">
@@ -397,6 +307,11 @@ export function DynamicWelcome() {
             <span key={index} style={{ '--firefly-index': index } as CSSProperties} />
           ))}
         </div>
+        <div className="welcome-glints">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <span key={index} style={{ '--glint-index': index } as CSSProperties} />
+          ))}
+        </div>
       </div>
       <div className="welcome-frame">
         <div className="welcome-greeting">
@@ -409,24 +324,13 @@ export function DynamicWelcome() {
           </div>
         </div>
         <p className="welcome-caption">{scene.caption}</p>
+        <div className="welcome-divider" aria-hidden>
+          <span />
+        </div>
         <div className="welcome-joke" role="status" aria-live="polite">
           <span className="welcome-joke__label">Teacher chuckle</span>
           <p key={jokeCycle} className="welcome-joke__text">
             {teacherJokes[jokeIndex]}
-          </p>
-        </div>
-        <div className="welcome-ambient-toggle">
-          <button type="button" onClick={toggleAmbient} className="welcome-ambient-toggle__button">
-            <span aria-hidden>{ambientState.isPlaying ? 'Pause serenity' : 'Play forest calm'}</span>
-            <span className="sr-only">
-              {ambientState.isPlaying ? 'Pause the calming forest soundscape.' : 'Play a calming forest soundscape with gentle chimes.'}
-            </span>
-          </button>
-          <p className="welcome-ambient-toggle__caption">
-            {ambientState.error ??
-              (ambientState.isPlaying
-                ? 'Let the breeze, chimes, and quiet forest hum soften the space.'
-                : 'Press play for whispering pines, soft wind, and mellow chimes.')}
           </p>
         </div>
       </div>
