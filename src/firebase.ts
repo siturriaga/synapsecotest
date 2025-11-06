@@ -3,6 +3,7 @@ import {
   browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
+  inMemoryPersistence,
   onAuthStateChanged,
   signInWithPopup,
   signInWithRedirect,
@@ -123,7 +124,21 @@ function detectPopupRestrictions() {
 
 export async function googleSignIn() {
   const authInstance = auth
-  await setPersistence(authInstance, browserLocalPersistence)
+  try {
+    await setPersistence(authInstance, browserLocalPersistence)
+  } catch (error: any) {
+    const code = typeof error?.code === 'string' ? error.code : ''
+    if (code === 'auth/unsupported-persistence-type') {
+      console.warn('Local persistence unsupported; falling back to in-memory auth state.', error)
+      try {
+        await setPersistence(authInstance, inMemoryPersistence)
+      } catch (fallbackError) {
+        console.warn('Failed to apply in-memory persistence; continuing with default behavior.', fallbackError)
+      }
+    } else {
+      console.warn('Failed to set preferred auth persistence; continuing with default behavior.', error)
+    }
+  }
   if (detectPopupRestrictions()) {
     await signInWithRedirect(authInstance, provider)
     return
