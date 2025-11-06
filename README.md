@@ -35,6 +35,8 @@ Set these in Netlify (Build & deploy → Environment):
 - `GEMINI_MODEL` (optional – defaults to Google’s latest Gemini 1.5 Pro variants with automatic fallbacks)
 - `GEMINI_API_VERSION` (optional – defaults to `v1beta`)
 
+> **Plain-language reminder:** If you point the app at a Netlify site on the internet (with `VITE_FUNCTION_BASE_URL`), give that site the very same hidden keys you keep on your laptop. Think of it like handing the substitute teacher the class roster and the Gemini password—without those notes, the remote helper picks up the phone but has no idea who you are or how to call Gemini back, so the quiz request dies.
+
 ### Client-safe
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_APP_ID`
@@ -42,6 +44,7 @@ Set these in Netlify (Build & deploy → Environment):
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FUNCTION_BASE_URL` (optional – points the browser at a deployed Netlify Functions host when you aren't running `netlify dev` locally)
 
 ## Netlify functions
 
