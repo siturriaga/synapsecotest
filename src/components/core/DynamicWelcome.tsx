@@ -63,7 +63,15 @@ function getClockRotation(date: Date) {
 export function DynamicWelcome() {
   const [now, setNow] = useState(() => new Date())
   const [isCompact, setIsCompact] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const { displayName } = usePreferences()
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setIsReady(true)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -115,6 +123,7 @@ export function DynamicWelcome() {
     <section
       className={`glass-card dynamic-welcome ${scene.id}`}
       data-compact={isCompact ? 'true' : undefined}
+      data-ready={isReady ? 'true' : undefined}
       style={{
         marginBottom: isCompact ? 24 : 32,
         backgroundImage: scene.gradient,
