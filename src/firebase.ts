@@ -142,9 +142,6 @@ export async function googleSignIn() {
 }
 
 export async function resolveRedirectResult() {
-  if (!detectPopupRestrictions()) {
-    return null
-  }
   try {
     return await getRedirectResult(auth)
   } catch (error) {
