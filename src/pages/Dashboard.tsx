@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'wouter'
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { db } from '../firebase'
@@ -1153,6 +1154,9 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <Link href="/assignments" className="primary" style={{ textDecoration: 'none' }}>
+                  Launch assignments workspace
+                </Link>
                 <ClearButton label="Clear assignments" onClear={handleClearAssignments} />
                 <PrintButton targetId={SECTION_IDS.assignments} label="Print assignments" />
               </div>

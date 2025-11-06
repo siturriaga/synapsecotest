@@ -63,8 +63,7 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
   const [gradeLevel, setGradeLevel] = useState<string>('')
   const [availableStandards, setAvailableStandards] = useState<Standard[]>([])
   const [selected, setSelected] = useState<Standard | null>(null)
-  const [focus, setFocus] = useState('target vocabulary development and conceptual understanding')
-  const [blueprint, setBlueprint] = useState<AssessmentBlueprint | null>(null)
+  const [quizBlueprint, setQuizBlueprint] = useState<AssessmentBlueprint | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { aiContext } = useRosterData()
@@ -112,9 +111,19 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
     setSelected((current) =>
       enrichedStandards.some((standard) => standard.code === current?.code) ? current : null
     )
+    setQuizBlueprint(null)
   }, [subjectId, gradeLevel, subjects])
 
-  async function generateLesson() {
+  useEffect(() => {
+    setQuizBlueprint(null)
+  }, [selected?.code])
+
+  const allQuizQuestions = useMemo(() => {
+    if (!quizBlueprint) return [] as AssessmentQuestion[]
+    return quizBlueprint.levels.flatMap((level) => level.questions)
+  }, [quizBlueprint])
+
+  async function generateQuiz() {
     if (!user || !selected || !subjectId || !gradeLevel) {
       setError('Sign in and complete the subject, grade, and standard selections first.')
       return
@@ -126,7 +135,9 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
         aiContext.classContext.pedagogy || aiContext.classContext.groups.length
           ? aiContext.classContext
           : null
-      const focusPayload = focus.trim() ? focus.trim() : aiContext.focusNarrative
+      const focusPayload = aiContext.focusNarrative?.trim()
+        ? aiContext.focusNarrative.trim()
+        : 'Keep the quiz aligned to the selected standard.'
       const response = await safeFetch<AssessmentBlueprint>(
         '/.netlify/functions/generateAssignment',
         {
@@ -137,16 +148,16 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
             focus: focusPayload,
             subject: subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId,
             grade: gradeLevel,
-            assessmentType: 'reading_plus',
+            assessmentType: 'multiple_choice',
             questionCount: 5,
-            includeRemediation: true,
+            includeRemediation: false,
             standardClarifications: selected.clarifications ?? [],
             standardObjectives: selected.objectives ?? [],
             classContext: aiClassContext
           })
         }
       )
-      setBlueprint(response)
+      setQuizBlueprint(response)
     } catch (err: any) {
       console.error(err)
       setError(err?.message ?? 'Gemini lesson generation failed.')
@@ -244,90 +255,57 @@ export default function StandardsEnginePage({ user }: StandardsPageProps) {
         )}
       </section>
 
-      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
-        <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Differentiated lesson brief</h3>
-        <div className="field">
-          <label htmlFor="standard-focus">Instructional focus</label>
-          <input
-            id="standard-focus"
-            name="standard-focus"
-            value={focus}
-            onChange={(event) => setFocus(event.target.value)}
-            placeholder="e.g., connect to career pathways"
-          />
-          {aiContext.masterySummary && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '6px 0 0' }}>
-              Roster context: {aiContext.masterySummary}
-            </p>
-          )}
-        </div>
-        <button className="primary" onClick={generateLesson} disabled={loading}>
-          {loading ? 'Generating blueprint…' : 'Generate AI blueprint'}
-        </button>
-        {error && <div style={{ color: '#fecaca' }}>{error}</div>}
-        {blueprint && (
-          <div style={{ display: 'grid', gap: 18 }}>
-            <div>
-              <h4 style={{ margin: '6px 0 0', fontSize: 20 }}>{blueprint.standardCode} · {blueprint.assessmentType.replace(/_/g, ' ')}</h4>
-              <p style={{ color: 'var(--text-muted)' }}>{blueprint.aiInsights.overview}</p>
-            </div>
-            <div className="glass-subcard" style={{ border: '1px solid rgba(148,163,184,0.25)', borderRadius: 18, padding: 18, background: 'rgba(15,23,42,0.55)' }}>
-              <strong>Class strategies</strong>
-              <ul style={{ margin: '8px 0 0 18px' }}>
-                {blueprint.aiInsights.classStrategies.map((strategy, index) => (
-                  <li key={index}>{strategy}</li>
-                ))}
-              </ul>
-              <strong style={{ display: 'block', marginTop: 12 }}>Next steps</strong>
-              <ul style={{ margin: '8px 0 0 18px' }}>
-                {blueprint.aiInsights.nextSteps.map((step, index) => (
-                  <li key={index}>{step}</li>
-                ))}
-              </ul>
-            </div>
-            {blueprint.levels.map((level) => (
-              <article key={level.level} style={{ border: '1px solid rgba(148,163,184,0.2)', borderRadius: 18, padding: 18, background: 'rgba(15,23,42,0.6)' }}>
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h5 style={{ margin: 0, fontSize: 18 }}>{level.level}</h5>
-                    <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>{level.description}</p>
-                  </div>
-                  <span className="tag">Differentiated</span>
-                </header>
-                <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-                  {level.questions.map((question) => (
-                    <div key={question.id} style={{ border: '1px solid rgba(99,102,241,0.25)', borderRadius: 12, padding: 12 }}>
-                      <strong>Prompt:</strong>
-                      <p style={{ margin: '8px 0', color: 'var(--text-muted)' }}>{question.prompt}</p>
-                      {question.options && (
-                        <ol style={{ margin: '0 0 0 18px' }}>
-                          {question.options.map((option, index) => (
-                            <li key={index}>{option}</li>
-                          ))}
-                        </ol>
-                      )}
-                      <div style={{ marginTop: 8 }}>
-                        <strong>Answer:</strong> {question.answer}
-                      </div>
-                      <div style={{ marginTop: 4, color: 'var(--text-muted)' }}>Why: {question.rationale}</div>
+      {selected && (
+        <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+          <h3 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>AI quiz builder</h3>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+            Generate a five-question quiz aligned to {selected.code}. Gemini reviews the standard’s objectives behind the scenes
+            to keep every item on target.
+          </p>
+          <button className="primary" onClick={generateQuiz} disabled={loading}>
+            {loading ? 'Generating quiz…' : 'Generate quiz'}
+          </button>
+          {error && <div style={{ color: '#fecaca' }}>{error}</div>}
+          {quizBlueprint && (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div>
+                <h4 style={{ margin: '6px 0 0', fontSize: 20 }}>
+                  {quizBlueprint.standardCode} · {quizBlueprint.assessmentType.replace(/_/g, ' ')}
+                </h4>
+                <p style={{ color: 'var(--text-muted)' }}>{quizBlueprint.aiInsights.overview}</p>
+              </div>
+              <ol style={{ margin: '0 0 0 18px', display: 'grid', gap: 12 }}>
+                {allQuizQuestions.map((question, index) => (
+                  <li
+                    key={`${question.id}-${index}`}
+                    style={{
+                      border: '1px solid rgba(99,102,241,0.3)',
+                      borderRadius: 12,
+                      padding: 14,
+                      background: 'rgba(15,23,42,0.55)',
+                      listStylePosition: 'outside'
+                    }}
+                  >
+                    <strong style={{ display: 'block' }}>Prompt</strong>
+                    <p style={{ margin: '8px 0', color: 'var(--text-muted)' }}>{question.prompt}</p>
+                    {question.options && (
+                      <ol style={{ margin: '0 0 0 18px' }}>
+                        {question.options.map((option, choiceIndex) => (
+                          <li key={choiceIndex}>{option}</li>
+                        ))}
+                      </ol>
+                    )}
+                    <div style={{ marginTop: 8 }}>
+                      <strong>Answer:</strong> {question.answer}
                     </div>
-                  ))}
-                </div>
-                {level.remediation.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <strong>Remediation ideas</strong>
-                    <ul style={{ margin: '8px 0 0 18px' }}>
-                      {level.remediation.map((tip, index) => (
-                        <li key={index}>{tip}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+                    <div style={{ marginTop: 4, color: 'var(--text-muted)' }}>Why: {question.rationale}</div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   )
 }
