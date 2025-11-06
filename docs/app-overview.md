@@ -10,7 +10,7 @@ This guide captures how the Synapse instructional planning workspace is intended
 
 ## Dashboard
 
-- **Dynamic welcome hero:** The hero greets the educator with their saved display name, AI-generated focus narrative, and status badges that react to reduced-motion preferences and to roster sync health. It surfaces loading placeholders until class data arrives, then transitions into animated metric cards.【F:src/components/core/DynamicWelcome.tsx†L1-L430】
+- **Dynamic welcome hero:** The hero greets the educator with their saved display name, AI-generated focus narrative, and status badges that react to reduced-motion preferences and to roster sync health. It surfaces loading skeletons until class data arrives, then transitions into animated metric cards.【F:src/components/core/DynamicWelcome.tsx†L1-L430】
 - **Metrics deck:** Stat cards combine assessment snapshots, roster insights, and AI highlights into quick glances at mastery, attendance, or engagement trends. The layout supports printing via the persistent print button.【F:src/pages/Dashboard.tsx†L1-L116】
 - **Mastery distribution:** Educators can filter by period, test, and view different segments (all students vs. sub-groups). The chart derives its dataset from Firestore and the roster-derived summaries, exposing trend deltas and normalized percentages.【F:src/pages/Dashboard.tsx†L118-L225】
 - **Student explorer:** Selecting a learner reveals AI-authored insights about their progress. Default selection auto-advances to the first roster student, and the explorer keeps the selection valid even as filters change.【F:src/pages/Dashboard.tsx†L227-L309】
