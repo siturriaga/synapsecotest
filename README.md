@@ -35,6 +35,8 @@ Set these in Netlify (Build & deploy → Environment):
 - `GEMINI_MODEL` (optional – defaults to Google’s latest Gemini 1.5 Pro variants with automatic fallbacks)
 - `GEMINI_API_VERSION` (optional – defaults to `v1beta`)
 
+> **Plain-language tip:** If you tell the app to use a Netlify site on the internet (by setting `VITE_FUNCTION_BASE_URL`), make sure that site already knows the same Firebase and Gemini secrets. Otherwise your quiz request reaches the site, but it can’t prove who you are or talk to Gemini, so it fails.
+
 ### Client-safe
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_APP_ID`
@@ -42,6 +44,7 @@ Set these in Netlify (Build & deploy → Environment):
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FUNCTION_BASE_URL` (optional – points the browser at a deployed Netlify Functions host when you aren't running `netlify dev` locally)
 
 ## Netlify functions
 
@@ -56,11 +59,14 @@ All handlers call `verifyBearerUid` to ensure only authenticated users access da
 
 ## Local development
 
-1. Create `.env` with your `VITE_FIREBASE_*` values.
+1. Create `.env` with your `VITE_FIREBASE_*` values. Add `VITE_FUNCTION_BASE_URL="https://<your-deployment>.netlify.app"` if you want the browser to call a remote functions host instead of a local Netlify runtime.
 2. `npm install` (uses only Firebase + Vite dependencies bundled in repo).
 3. `npm run dev`
 
-Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`; when running locally, either proxy through Netlify (`netlify dev`) or stub responses.
+Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`. You have two options during development:
+
+- **Run Netlify locally** – Use `npx netlify-cli dev` to start Vite and the Netlify Functions runtime together. This is the most transparent workflow when you need live function logs.
+- **Reuse a deployed host** – Define `VITE_FUNCTION_BASE_URL` so the app targets your deployed Netlify Functions instead of `localhost:8888`. This avoids 404s when you can't run the Netlify CLI but still requires the remote environment to have the Firebase and Gemini secrets configured.
 
 ## Deployment checklist
 
