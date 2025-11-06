@@ -14,12 +14,12 @@ import {
 import { getFirestore, initializeFirestore } from 'firebase/firestore'
 import {
   API_PREFIX,
+  getRemoteApiBase,
+  getRemoteFunctionBase,
   joinUrl,
   LOCAL_NETLIFY_ORIGIN,
   NETLIFY_PREFIX,
-  REMOTE_API_BASE,
-  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
-  REMOTE_FUNCTION_BASE
+  remoteBaseIncludesFunctionPrefix
 } from './utils/netlifyTargets'
 
 type EnvSource = Record<string, string | undefined>
@@ -73,6 +73,9 @@ function buildRuntimeTargets(): string[] {
   }
 
   const targets: string[] = []
+  const remoteFunctionBase = getRemoteFunctionBase()
+  const remoteApiBase = getRemoteApiBase()
+  const remoteIncludesFunctionPrefix = remoteBaseIncludesFunctionPrefix()
   const append = (value: string) => {
     if (!targets.includes(value)) {
       targets.push(value)
@@ -89,14 +92,16 @@ function buildRuntimeTargets(): string[] {
 
     const functionPath = segment
 
-    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
-      append(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
-    } else {
-      append(joinUrl(REMOTE_FUNCTION_BASE, `${NETLIFY_PREFIX}${functionPath}`))
+    if (remoteFunctionBase) {
+      if (remoteIncludesFunctionPrefix) {
+        append(joinUrl(remoteFunctionBase, functionPath))
+      } else {
+        append(joinUrl(remoteFunctionBase, `${NETLIFY_PREFIX}${functionPath}`))
+      }
     }
 
-    if (REMOTE_API_BASE) {
-      append(joinUrl(REMOTE_API_BASE, functionPath))
+    if (remoteApiBase) {
+      append(joinUrl(remoteApiBase, functionPath))
     }
   }
 
