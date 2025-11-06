@@ -5,7 +5,7 @@ This repository contains a production-ready build that matches the Synapse speci
 - Google Sign-In authentication (Firebase) with workspace-scoped Firestore data.
 - Netlify Functions orchestrating secure roster ingestion and Gemini reasoning for grouping and lesson planning.
 - React single-page app with a premium “glass” UI, keyboard-accessible navigation, and form controls with explicit identifiers.
-- No demo placeholders: every action persists to Firebase or triggers a Gemini-backed workflow.
+- No demo stand-ins: every action persists to Firebase or triggers a Gemini-backed workflow.
 
 ## Key decisions
 
@@ -57,36 +57,13 @@ Set these in Netlify (Build & deploy → Environment):
 
 All handlers call `verifyBearerUid` to ensure only authenticated users access data, and failures return structured JSON errors.
 
-## Local development
+## Cloud setup
 
-1. Create `.env` with your `VITE_FIREBASE_*` values.
-1. Create `.env` with your `VITE_FIREBASE_*` values. Add `VITE_FUNCTION_BASE_URL="https://<your-deployment>.netlify.app"` if you want the browser to call a remote functions host instead of a local Netlify runtime. (Nothing in the repo auto-populates this variable—you need to set it yourself for the app to use that remote helper.)
-2. `npm install` (uses only Firebase + Vite dependencies bundled in repo).
-3. `npm run dev`
-
-Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`; when running locally, either proxy through Netlify (`netlify dev`) or stub responses.
-Gemini calls require the Netlify function runtime with `GEMINI_API_KEY`. You have two options during development:
-
-- **Run Netlify locally** – Use `npx netlify-cli dev` to start Vite and the Netlify Functions runtime together. This is the most transparent workflow when you need live function logs.
-- **Reuse a deployed host** – Define `VITE_FUNCTION_BASE_URL` so the app targets your deployed Netlify Functions instead of `localhost:8888`. Once that URL is in place, the quiz call stops returning the “Gemini request failed” 404 because it can finally reach the live function. The remote environment still needs the Firebase and Gemini secrets configured.
-
-### Codespaces quick commands
-
-If you are working in GitHub Codespaces and want the quiz generator to stop returning 404s, run the same Netlify workflow directly in the Codespace terminal:
-
-```bash
-npm install                 # pull project dependencies
-npx netlify-cli dev         # launches Vite + Netlify Functions on the Codespace
-```
-
-Alternatively, if you have set `VITE_FUNCTION_BASE_URL` to a deployed Netlify site that already holds your Firebase and Gemini secrets, you can skip the Netlify CLI and run:
-
-```bash
-npm install
-npm run dev
-```
-
-Either path makes sure the browser can reach `/.netlify/functions/generateAssignment`, which is the final hop before Gemini writes the quiz.
+1. Connect this repository to Netlify and keep the default build command (`npm run build`).
+2. Populate the server-side and client-safe variables above in Netlify → Site configuration → Environment.
+3. Deploy the site and confirm the generated `/api/*` redirect maps to `/.netlify/functions/:splat` as defined in `netlify.toml`.
+4. Sign in with Google on the deployed site, upload a roster, request groups, and generate assignments to confirm Firestore collections update (`dashboard_stats`, `roster`, `groups`, `assignments`, `preferences`, `logs`).
+5. Keep Firebase Auth configured with the Netlify domain so Google sign-in can complete.
 
 ## Deployment checklist
 

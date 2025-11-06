@@ -62,7 +62,9 @@ export async function safeFetch<T>(path: string, options: RequestInit = {}): Pro
     try {
       const response = await performFetch(url, options, token)
       if (!response.ok) {
-        const error = new SafeFetchError(await parseError(response), response.status)
+        const details = await parseError(response)
+        const message = `${response.status}: ${details}`
+        const error = new SafeFetchError(message, response.status)
         lastError = error
         if (shouldRefresh && unauthorizedStatuses.has(error.status)) {
           continue
@@ -93,8 +95,8 @@ export async function safeFetch<T>(path: string, options: RequestInit = {}): Pro
     throw new SafeFetchError(
       [
         'Gemini helper unavailable.',
-        'Start the Netlify Functions server with "npx netlify-cli dev" or set VITE_FUNCTION_BASE_URL',
-        'to a deployed site whose functions are running with your Firebase and Gemini keys.'
+        'Confirm your Netlify deployment is live and serving /.netlify/functions endpoints.',
+        'Ensure that environment has the Firebase and Gemini keys configured.'
       ].join(' '),
       lastError.status
     )
