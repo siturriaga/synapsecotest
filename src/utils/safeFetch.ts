@@ -1,12 +1,12 @@
 import { auth } from '../firebase'
 import {
   API_PREFIX,
+  getRemoteApiBase,
+  getRemoteFunctionBase,
   joinUrl,
   LOCAL_NETLIFY_ORIGIN,
   NETLIFY_PREFIX,
-  REMOTE_API_BASE,
-  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
-  REMOTE_FUNCTION_BASE
+  remoteBaseIncludesFunctionPrefix
 } from './netlifyTargets'
 
 class SafeFetchError extends Error {
@@ -63,6 +63,10 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
   const requestingFunction = url.startsWith(NETLIFY_PREFIX)
   const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
 
+  const remoteFunctionBase = getRemoteFunctionBase()
+  const remoteApiBase = getRemoteApiBase()
+  const remoteIncludesFunctionPrefix = remoteBaseIncludesFunctionPrefix()
+
   if (requestingFunction) {
     appendTarget(`${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`)
 
@@ -71,14 +75,16 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
     }
 
     const functionPath = url.startsWith(NETLIFY_PREFIX) ? url.slice(NETLIFY_PREFIX.length) : url
-    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
-    } else {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, url))
+    if (remoteFunctionBase) {
+      if (remoteIncludesFunctionPrefix) {
+        appendTarget(joinUrl(remoteFunctionBase, functionPath))
+      } else {
+        appendTarget(joinUrl(remoteFunctionBase, url))
+      }
     }
 
-    if (REMOTE_API_BASE) {
-      appendTarget(joinUrl(REMOTE_API_BASE, functionPath))
+    if (remoteApiBase) {
+      appendTarget(joinUrl(remoteApiBase, functionPath))
     }
   }
 
@@ -147,6 +153,17 @@ export async function safeFetch<T>(url: string, options: RequestInit = {}): Prom
       lastError = null
       continue
     }
+  }
+
+  if (requestingFunction && lastError instanceof SafeFetchError && lastError.status === 404) {
+    throw new SafeFetchError(
+      [
+        'Gemini helper unavailable.',
+        'Start the Netlify Functions server with "npx netlify-cli dev" or set VITE_FUNCTION_BASE_URL',
+        'to a deployed site whose functions are running with your Firebase and Gemini keys.'
+      ].join(' '),
+      lastError.status
+    )
   }
 
   if (lastError instanceof Error) {
