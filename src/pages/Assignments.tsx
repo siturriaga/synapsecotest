@@ -158,7 +158,14 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       setAssignments([])
       return
     }
-    const q = collection(db, `users/${user.uid}/assignments`)
+    const database = db
+    if (!database) {
+      console.warn('Firestore unavailable. Assignments will not load until configuration is restored.')
+      setStatusMessage('Workspace storage is offline. Existing assignments are temporarily hidden.')
+      setAssignments([])
+      return
+    }
+    const q = collection(database, `users/${user.uid}/assignments`)
     const unsub = onSnapshot(q, (snap) => {
       const rows: Assignment[] = []
       snap.forEach((docSnap) => {
@@ -175,7 +182,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       setAssignments(rows)
     })
     return () => unsub()
-  }, [user])
+  }, [user, db])
 
   async function buildAssignment(event: React.FormEvent) {
     event.preventDefault()
@@ -186,6 +193,12 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
     }
     if (!title.trim()) {
       setStatusMessage('Provide a title so the assignment is easy to find later.')
+      return
+    }
+
+    const database = db
+    if (!database) {
+      setStatusMessage('Workspace storage is offline. Try again once Firestore is configured.')
       return
     }
 
@@ -216,7 +229,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
         })
       })
 
-      await addDoc(collection(db, `users/${user.uid}/assignments`), {
+      await addDoc(collection(database, `users/${user.uid}/assignments`), {
         title,
         status: 'draft',
         dueDate: dueDate || null,
@@ -244,13 +257,23 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
 
   async function updateStatus(id: string, status: Assignment['status']) {
     if (!user) return
-    await updateDoc(doc(db, `users/${user.uid}/assignments/${id}`), { status })
+    const database = db
+    if (!database) {
+      setStatusMessage('Workspace storage is offline. Status changes are paused.')
+      return
+    }
+    await updateDoc(doc(database, `users/${user.uid}/assignments/${id}`), { status })
     setStatusMessage('Status updated.')
   }
 
   async function removeAssignment(id: string) {
     if (!user) return
-    await deleteDoc(doc(db, `users/${user.uid}/assignments/${id}`))
+    const database = db
+    if (!database) {
+      setStatusMessage('Workspace storage is offline. Deletions are paused.')
+      return
+    }
+    await deleteDoc(doc(database, `users/${user.uid}/assignments/${id}`))
     setStatusMessage('Assignment deleted.')
   }
 
