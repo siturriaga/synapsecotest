@@ -1,13 +1,5 @@
 import { auth } from '../firebase'
-import {
-  API_PREFIX,
-  joinUrl,
-  LOCAL_NETLIFY_ORIGIN,
-  NETLIFY_PREFIX,
-  REMOTE_API_BASE,
-  REMOTE_BASE_INCLUDES_FUNCTION_PREFIX,
-  REMOTE_FUNCTION_BASE
-} from './netlifyTargets'
+import { buildFunctionCandidates } from './netlifyTargets'
 
 class SafeFetchError extends Error {
   status: number
@@ -43,114 +35,120 @@ async function parseError(response: Response) {
     if (parsed && typeof parsed.error === 'string') {
       return parsed.error
     }
-  } catch (err) {
-    // ignore JSON parse failures; fall back to raw text
+  } catch (error) {
+    // ignore JSON parse failures and fall back to raw text
   }
   return text || `Request failed with status ${response.status}`
 }
 
-export async function safeFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const user = auth.currentUser ?? null
-  const targets: string[] = []
-  const appendTarget = (target: string) => {
-    if (!targets.includes(target)) {
-      targets.push(target)
-    }
+type AttemptDetail = {
+  url: string
+  status?: number
+  message?: string
+}
+
+function formatAttemptSummary(attempts: AttemptDetail[]): string {
+  if (!attempts.length) {
+    return 'no targets attempted'
   }
+  return attempts
+    .map((attempt) => {
+      const status = typeof attempt.status === 'number' ? attempt.status : 'error'
+      const message = attempt.message?.trim()
+      return message ? `${attempt.url} (${status} – ${message})` : `${attempt.url} (${status})`
+    })
+    .join('; ')
+}
 
-  appendTarget(url)
-
-  const requestingFunction = url.startsWith(NETLIFY_PREFIX)
-  const isBrowser = typeof window !== 'undefined' && typeof window.location !== 'undefined'
-
-  if (requestingFunction) {
-    appendTarget(`${API_PREFIX}${url.slice(NETLIFY_PREFIX.length)}`)
-
-    if (isBrowser && window.location.hostname === 'localhost') {
-      appendTarget(`${LOCAL_NETLIFY_ORIGIN}${url}`)
-    }
-
-    const functionPath = url.startsWith(NETLIFY_PREFIX) ? url.slice(NETLIFY_PREFIX.length) : url
-    if (REMOTE_BASE_INCLUDES_FUNCTION_PREFIX) {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, functionPath))
-    } else {
-      appendTarget(joinUrl(REMOTE_FUNCTION_BASE, url))
-    }
-
-    if (REMOTE_API_BASE) {
-      appendTarget(joinUrl(REMOTE_API_BASE, functionPath))
-    }
-  }
-
-  let lastError: unknown
-  const shouldRetry404 = (error: unknown, index: number) =>
-    requestingFunction &&
-    error instanceof SafeFetchError &&
-    error.status === 404 &&
-    index < targets.length - 1
-
-  const shouldRetryNetworkError = (error: unknown, index: number) =>
-    requestingFunction &&
-    error instanceof TypeError &&
-    index < targets.length - 1
-
+export async function safeFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const targets = buildFunctionCandidates(path)
+  const user = auth?.currentUser ?? null
   const unauthorizedStatuses = new Set([401, 403, 440])
-  const maxAuthAttempts = user ? 2 : 1
+  const maxAttempts = user ? 2 : 1
+  let finalError: unknown = null
+  const attempts: AttemptDetail[] = []
 
-  for (let attempt = 0; attempt < maxAuthAttempts; attempt += 1) {
-    const token = user ? await user.getIdToken(attempt === 1) : null
-    let refreshDueToAuth = false
+  for (const url of targets) {
+    let lastError: unknown = null
 
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index]
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const token = user ? await user.getIdToken(attempt === 1) : null
+      const shouldRefresh = attempt === 0 && Boolean(user)
 
       try {
-        const response = await performFetch(target, options, token)
-
+        const response = await performFetch(url, options, token)
         if (!response.ok) {
-          const error = new SafeFetchError(await parseError(response), response.status)
+          const details = await parseError(response)
+          const message = `${response.status}: ${details}`
+          const error = new SafeFetchError(message, response.status)
+          attempts.push({ url, status: response.status, message: details })
           lastError = error
-          if (user && attempt === 0 && unauthorizedStatuses.has(error.status)) {
-            refreshDueToAuth = true
-            break
-          }
-          if (shouldRetry404(error, index)) {
+          if (shouldRefresh && unauthorizedStatuses.has(error.status)) {
             continue
           }
-          throw error
+          break
         }
 
-        const responseClone = response.clone()
-
+        const clone = response.clone()
         try {
           return (await response.json()) as T
         } catch {
-          const text = await responseClone.text()
+          const text = await clone.text()
           return text as unknown as T
         }
       } catch (error) {
-        lastError = error
-        if (refreshDueToAuth) {
-          break
+        const normalizedError =
+          error instanceof Error ? error : new Error('Request failed')
+        if (normalizedError instanceof SafeFetchError) {
+          attempts.push({ url, status: normalizedError.status, message: normalizedError.message })
+        } else {
+          attempts.push({ url, message: normalizedError.message })
         }
-        if (shouldRetry404(error, index) || shouldRetryNetworkError(error, index)) {
+        lastError = normalizedError
+        if (
+          shouldRefresh &&
+          normalizedError instanceof SafeFetchError &&
+          unauthorizedStatuses.has(normalizedError.status)
+        ) {
           continue
         }
-        if (error instanceof Error) {
-          throw error
-        }
-        throw new Error('Request failed')
+        break
       }
     }
 
-    if (refreshDueToAuth) {
-      lastError = null
+    if (!lastError) {
+      finalError = new Error('Request failed')
+      attempts.push({ url, message: 'Unknown failure' })
       continue
+    }
+
+    finalError = lastError
+
+    if (lastError instanceof SafeFetchError) {
+      if (lastError.status === 404) {
+        continue
+      }
+      throw lastError
     }
   }
 
-  if (lastError instanceof Error) {
-    throw lastError
+  if (finalError instanceof SafeFetchError && finalError.status === 404) {
+    throw new SafeFetchError(
+      [
+        'Gemini helper unavailable.',
+        `Attempts: ${formatAttemptSummary(attempts)}.`,
+        'Confirm your Netlify deployment is live and serving /.netlify/functions endpoints.',
+        'Ensure that environment has the Firebase and Gemini keys configured.'
+      ].join(' '),
+      finalError.status
+    )
+  }
+
+  if (finalError instanceof Error) {
+    const message = finalError.message
+    const suffix = attempts.length ? ` Attempts: ${formatAttemptSummary(attempts)}.` : ''
+    const augmented = new Error(`${message}${suffix}`)
+    throw augmented
   }
 
   throw new Error('Request failed')

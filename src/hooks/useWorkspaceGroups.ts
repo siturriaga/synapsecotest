@@ -104,8 +104,16 @@ export function useWorkspaceGroups(user: User | null) {
       return
     }
 
+    if (!db) {
+      console.warn('Firestore unavailable. Workspace groups cannot be loaded.')
+      setGroups([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
-    const groupsQuery = query(collection(db, `users/${user.uid}/groups`), orderBy('createdAt', 'desc'))
+    const database = db
+    const groupsQuery = query(collection(database, `users/${user.uid}/groups`), orderBy('createdAt', 'desc'))
     const unsubscribe = onSnapshot(groupsQuery, (snapshot) => {
       const rows: WorkspaceGroup[] = []
       snapshot.forEach((docSnap) => {
@@ -115,7 +123,7 @@ export function useWorkspaceGroups(user: User | null) {
       setLoading(false)
     })
     return () => unsubscribe()
-  }, [user])
+  }, [user, db])
 
   const insights = useMemo<GroupInsightsSummary | null>(() => {
     if (!groups.length) return null

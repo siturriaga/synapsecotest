@@ -7,7 +7,7 @@
 ## Observations
 - `useRosterData.tsx` was trimmed to emit only derived insights, causing downstream features (groups/assignments/dashboard) to rely on the same shared AI context without isolated guards.
 - The Dynamic Welcome redesign replaced the simple hero with animated, data-heavy UI but lacked loading/error fallbacks, leading to blank states when Firestore snapshots lagged.
-- No routing assets (`_redirects`) shipped with the dist output, so Netlify served 404s when refreshing deep links even though local dev routing worked.
+- No routing assets (`_redirects`) shipped with the dist output, so Netlify served 404s when refreshing deep links even though pre-deploy previews routed correctly.
 
 ## Remediation steps
 1. Restore deterministic tests around `buildGroupInsights` and `buildRosterAIContext` to catch logic drift early.

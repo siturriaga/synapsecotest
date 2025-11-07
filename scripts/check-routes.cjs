@@ -1,4 +1,9 @@
-[build]
+#!/usr/bin/env node
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+const expectedToml = `[build]
 command = "npm run build"
 publish = "dist"
 functions = "netlify/functions"
@@ -45,3 +50,32 @@ status = 200
 from = "/*"
 to = "/index.html"
 status = 200
+`
+
+let hasError = false
+
+const tomlPath = path.resolve(process.cwd(), 'netlify.toml')
+const currentToml = fs.readFileSync(tomlPath, 'utf8')
+if (currentToml !== expectedToml) {
+  console.error('FAIL netlify.toml does not match required block')
+  hasError = true
+}
+
+const targetsPath = path.resolve(process.cwd(), 'src/utils/netlifyTargets.ts')
+const targetsSource = fs.readFileSync(targetsPath, 'utf8')
+
+if (!/\/api\//.test(targetsSource)) {
+  console.error('FAIL netlifyTargets does not build /api/ URLs')
+  hasError = true
+}
+
+if (/VITE_FUNCTION_BASE_URL/.test(targetsSource)) {
+  console.error('FAIL netlifyTargets still references VITE_FUNCTION_BASE_URL')
+  hasError = true
+}
+
+if (hasError) {
+  process.exitCode = 1
+} else {
+  console.log('check:routes ok')
+}

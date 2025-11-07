@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import { safeFetch } from '../utils/safeFetch'
 import {
   DEFAULT_APP_PREFERENCES,
   type AppPreferences,
@@ -28,6 +29,9 @@ export default function SettingsPage({ user }: SettingsPageProps) {
   const [preferences, setPreferences] = useState<Preferences>(() => createDefaultPreferences())
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [healthState, setHealthState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [healthReport, setHealthReport] = useState<HealthPayload | null>(null)
+  const [healthError, setHealthError] = useState<string | null>(null)
   const accentLabel = useMemo(() => preferences.accentColor.toUpperCase(), [preferences.accentColor])
   const surfaceLabel = useMemo(() => preferences.surfaceColor.toUpperCase(), [preferences.surfaceColor])
   const selectedTexture = useMemo(
@@ -35,12 +39,35 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     [preferences.texture]
   )
 
+
+  const refreshHealth = useCallback(async () => {
+    setHealthState('loading')
+    setHealthError(null)
+    try {
+      const report = await safeFetch<HealthPayload>('/api/health')
+      setHealthReport(report)
+      setHealthState('ready')
+    } catch (err: any) {
+      console.error('Health check failed', err)
+      setHealthReport(null)
+      setHealthState('error')
+      setHealthError(err?.message ?? 'Unable to contact Netlify functions.')
+    }
+  }, [])
+
   useEffect(() => {
     async function loadPreferences() {
       if (!user) {
         setPreferences(createDefaultPreferences())
         return
       }
+
+      if (!db) {
+        console.warn('Firestore unavailable. Unable to load user preferences.')
+        setError('Workspace storage is offline. Preferences will stay at their defaults until it returns.')
+        return
+      }
+
       const ref = doc(db, `users/${user.uid}/preferences/app`)
       const snap = await getDoc(ref)
       setPreferences(sanitizePreferences(snap.exists() ? (snap.data() as Partial<Preferences>) : undefined))
@@ -49,12 +76,19 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       console.error(err)
       setError('Failed to load preferences.')
     })
-  }, [user])
+    refreshHealth().catch((err) => {
+      console.error(err)
+    })
+  }, [user, db, refreshHealth])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!user) {
       setError('Sign in first.')
+      return
+    }
+    if (!db) {
+      setError('Workspace storage is offline. Preferences cannot be saved right now.')
       return
     }
     try {
@@ -206,6 +240,95 @@ export default function SettingsPage({ user }: SettingsPageProps) {
         {status && <p style={{ marginTop: 12, color: 'var(--text-muted)' }}>{status}</p>}
         {error && <p style={{ marginTop: 12, color: '#fecaca' }}>{error}</p>}
       </section>
+      <section className="glass-card" aria-live="polite">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: '4px 0 6px', fontSize: 24, fontWeight: 800 }}>System diagnostics</h2>
+          <button type="button" className="secondary" onClick={() => refreshHealth()} disabled={healthState === 'loading'}>
+            {healthState === 'loading' ? 'Checking…' : 'Run check again'}
+          </button>
+        </div>
+        {healthState === 'loading' && <p style={{ color: 'var(--text-muted)' }}>Contacting Netlify functions…</p>}
+        {healthState === 'error' && healthError && (
+          <p style={{ color: '#fecaca', marginTop: 12 }}>{healthError}</p>
+        )}
+        {healthState === 'ready' && healthReport && (
+          <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+            <HealthStatusRow
+              label="Firebase Admin"
+              status={healthReport.firebaseAdmin.configured ? 'Ready' : 'Missing credentials'}
+              detail={healthReport.firebaseAdmin.error}
+              healthy={healthReport.firebaseAdmin.configured}
+            />
+            <HealthStatusRow
+              label="Gemini API"
+              status={healthReport.gemini.configured ? 'Key detected' : 'Not configured'}
+              detail={healthReport.gemini.error}
+              healthy={healthReport.gemini.configured}
+            />
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              <strong>Last check:</strong> {new Date(healthReport.timestamp).toLocaleString()}
+            </div>
+            {healthReport.notes.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: 20, color: 'var(--text-muted)' }}>
+                {healthReport.notes.map((note, index) => (
+                  <li key={index}>{note}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+type HealthPayload = {
+  ok: boolean
+  timestamp: string
+  firebaseAdmin: { configured: boolean; error?: string }
+  gemini: { configured: boolean; error?: string }
+  notes: string[]
+}
+
+function HealthStatusRow({
+  label,
+  status,
+  detail,
+  healthy
+}: {
+  label: string
+  status: string
+  detail?: string
+  healthy: boolean
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        borderRadius: 12,
+        background: healthy ? 'rgba(34,197,94,0.1)' : 'rgba(248,113,113,0.12)',
+        border: healthy ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(248,113,113,0.25)'
+      }}
+    >
+      <div style={{ display: 'grid', gap: 4 }}>
+        <strong style={{ fontSize: 14, letterSpacing: 0.4 }}>{label}</strong>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{status}</span>
+        {detail && <span style={{ fontSize: 12, color: 'rgba(248,113,113,0.9)' }}>{detail}</span>}
+      </div>
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          color: healthy ? 'rgba(34,197,94,0.95)' : 'rgba(248,113,113,0.9)'
+        }}
+      >
+        {healthy ? 'OK' : 'ATTENTION'}
+      </span>
     </div>
   )
 }
