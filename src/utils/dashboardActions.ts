@@ -11,7 +11,11 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 
-async function clearCollection(path: string, database: Firestore = db) {
+async function clearCollection(path: string, database: Firestore | null = db) {
+  if (!database) {
+    console.warn(`Firestore unavailable. Skipping collection clear for ${path}.`)
+    return
+  }
   const target = collection(database, path)
   // Firestore write batches are limited to 500 operations. Loop until the
   // collection is empty, deleting documents in chunks that respect that cap.
@@ -27,7 +31,10 @@ async function clearCollection(path: string, database: Firestore = db) {
   }
 }
 
-async function clearDocument(ref: DocumentReference) {
+async function clearDocument(ref: DocumentReference | null) {
+  if (!ref) {
+    return
+  }
   try {
     await deleteDoc(ref)
   } catch (error) {
@@ -36,6 +43,10 @@ async function clearDocument(ref: DocumentReference) {
 }
 
 export async function clearDashboardMetrics(userId: string) {
+  if (!db) {
+    console.warn('Firestore unavailable. Cannot clear dashboard metrics.')
+    return
+  }
   await clearDocument(doc(db, `users/${userId}/dashboard_stats/metrics`))
 }
 
@@ -64,6 +75,10 @@ export async function clearUploads(userId: string) {
 }
 
 export async function clearWorkspaceCache(userId: string) {
+  if (!db) {
+    console.warn('Firestore unavailable. Cannot clear workspace cache.')
+    return
+  }
   await clearDocument(doc(db, `users/${userId}/workspace_cache/rosterSnapshot`))
   await clearDocument(doc(db, `users/${userId}/workspace_cache/groupInsights`))
 }

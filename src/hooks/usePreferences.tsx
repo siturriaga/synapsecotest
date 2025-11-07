@@ -175,6 +175,13 @@ export function PreferencesProvider({ user, children }: { user: User | null; chi
       return
     }
 
+    if (!db) {
+      console.warn('Firestore unavailable. Preferences updates are disabled until configuration is restored.')
+      setPreferences({ ...DEFAULT_APP_PREFERENCES })
+      setReady(true)
+      return
+    }
+
     const ref = doc(db, `users/${user.uid}/preferences/app`)
     const unsubscribe = onSnapshot(
       ref,
@@ -191,7 +198,7 @@ export function PreferencesProvider({ user, children }: { user: User | null; chi
     )
 
     return () => unsubscribe()
-  }, [user])
+  }, [user, db])
 
   useEffect(() => {
     applyTheme(preferences)
