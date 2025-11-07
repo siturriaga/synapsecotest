@@ -14,16 +14,20 @@ const navItems = [
 
 type SidebarProps = {
   user: User | null
+  authEnabled: boolean
   onSignIn: () => void
   onSignOut: () => void
   onDismiss?: () => void
 } & HTMLAttributes<HTMLElement>
 
-export function Sidebar({ user, onSignIn, onSignOut, onDismiss, className, ...rest }: SidebarProps) {
+export function Sidebar({ user, authEnabled, onSignIn, onSignOut, onDismiss, className, ...rest }: SidebarProps) {
   const { displayName } = usePreferences()
   const asideClassName = className ? `sidebar ${className}` : 'sidebar'
 
   const handleSignIn = () => {
+    if (!authEnabled) {
+      return
+    }
     onSignIn()
     onDismiss?.()
   }
@@ -59,14 +63,18 @@ export function Sidebar({ user, onSignIn, onSignOut, onDismiss, className, ...re
             ) : (
               <>
                 <div className="sidebar__account-name">Not signed in</div>
-                <div className="sidebar__account-meta">Authenticate to unlock Gemini-powered workflows.</div>
+                <div className="sidebar__account-meta">
+                  {authEnabled
+                    ? 'Authenticate to unlock Gemini-powered workflows.'
+                    : 'Sign-in is disabled until Firebase credentials are configured.'}
+                </div>
               </>
             )}
           </div>
           <div className="sidebar__actions">
             {!user ? (
-              <button className="primary" onClick={handleSignIn}>
-                Sign in with Google
+              <button className="primary" onClick={handleSignIn} disabled={!authEnabled}>
+                {authEnabled ? 'Sign in with Google' : 'Sign in unavailable'}
               </button>
             ) : (
               <button className="secondary" onClick={handleSignOut}>

@@ -5,13 +5,25 @@ import type { User } from 'firebase/auth'
 type AuthState = {
   user: User | null
   loading: boolean
+  authConfigured: boolean
   error?: string
 }
 
 export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: () => Promise<void> }] {
-  const [state, setState] = useState<AuthState>({ user: auth?.currentUser ?? null, loading: true })
+  const authConfigured = Boolean(auth)
+  const [state, setState] = useState<AuthState>({
+    user: auth?.currentUser ?? null,
+    loading: authConfigured,
+    authConfigured,
+    error: undefined
+  })
 
   useEffect(() => {
+    if (!authConfigured) {
+      setState((prev) => ({ ...prev, loading: false }))
+      return
+    }
+
     let mounted = true
 
     async function checkRedirectResult() {
@@ -32,16 +44,29 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
 
     const unsub = onAuth((u) => {
       if (!mounted) return
-      setState((prev) => ({ user: u, loading: false, error: u ? undefined : prev.error }))
+      setState((prev) => ({
+        user: u,
+        loading: false,
+        authConfigured,
+        error: u ? undefined : prev.error
+      }))
     })
 
     return () => {
       mounted = false
       unsub()
     }
-  }, [])
+  }, [authConfigured])
 
   async function signIn() {
+    if (!authConfigured) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Google sign-in is disabled because Firebase auth is not configured.'
+      }))
+      return
+    }
     try {
       setState((prev) => ({ ...prev, loading: true, error: undefined }))
       await googleSignIn()
@@ -52,6 +77,14 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
   }
 
   async function signOut() {
+    if (!authConfigured) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'No authentication session to sign out from.'
+      }))
+      return
+    }
     try {
       setState((prev) => ({ ...prev, loading: true, error: undefined }))
       await logout()
