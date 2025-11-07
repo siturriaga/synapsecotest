@@ -124,7 +124,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setError(null)
         setStatus('Publishing roster to your secure workspace…')
 
-        const token = await auth.currentUser?.getIdToken()
+        const token = await auth?.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
         const uploadResponse = await fetch(

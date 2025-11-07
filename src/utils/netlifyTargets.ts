@@ -1,62 +1,80 @@
 const NETLIFY_PREFIX = '/.netlify/functions/'
 const API_PREFIX = '/api/'
-const LOCAL_NETLIFY_ORIGIN = 'http://localhost:8888'
-const RAW_REMOTE_FUNCTION_BASE = (import.meta.env?.VITE_FUNCTION_BASE_URL || 'https://synapsecopilot.com').trim()
+const LOCAL_NETLIFY_HOSTS = [
+  'http://localhost:8888/.netlify/functions/',
+  'http://127.0.0.1:8888/.netlify/functions/'
+]
 
-export type RemoteBaseConfig = {
-  functionBase: string
-  apiBase: string
-  includesFunctionPrefix: boolean
+export function getDefaultRemoteFunctionBase(): string {
+  return ''
 }
 
-export function normalizeRemoteBase(raw: string): RemoteBaseConfig {
-  const fallback = 'https://synapsecopilot.com'
-  const base = raw ? raw : fallback
-  const withoutTrailingSlash = base.replace(/\/$/, '') || fallback
+export function getRemoteFunctionBase(): string {
+  return ''
+}
 
-  const hasFunctionPrefix = /\/\.netlify\/functions(?:\b|\/)/i.test(withoutTrailingSlash)
-  const hasApiPrefix = /\/api(?:\b|\/)/i.test(withoutTrailingSlash)
+export function getRemoteFunctionBaseOverride(): string | null {
+  return null
+}
 
-  const functionBase = (() => {
-    if (hasFunctionPrefix) {
-      return withoutTrailingSlash
-    }
-    if (hasApiPrefix) {
-      return withoutTrailingSlash.replace(/\/api(?:\b|\/)/i, NETLIFY_PREFIX.replace(/\/$/, ''))
-    }
-    return withoutTrailingSlash
-  })()
+export function setRemoteFunctionBaseOverride(_value: string | null): void {}
 
-  const apiBase = (() => {
-    if (hasApiPrefix) {
-      return withoutTrailingSlash
-    }
-    if (/\/\.netlify\/functions(?:\b|\/)/i.test(withoutTrailingSlash)) {
-      return withoutTrailingSlash.replace(/\/\.netlify\/functions(?:\b|\/)/i, API_PREFIX.replace(/\/$/, ''))
-    }
-    return `${withoutTrailingSlash}${API_PREFIX}`
-  })().replace(/\/$/, '')
+export function clearRemoteFunctionBaseOverride(): void {}
 
-  return {
-    functionBase: functionBase.replace(/\/$/, ''),
-    apiBase,
-    includesFunctionPrefix: /\/\.netlify\/functions\b/i.test(functionBase)
+function normalizePath(path: string): { pathname: string; query: string } {
+  const [rawPath, ...queryParts] = path.split('?')
+  const query = queryParts.length ? queryParts.join('?') : ''
+
+  if (/^https?:\/\//i.test(rawPath)) {
+    return { pathname: rawPath, query }
   }
+
+  let pathname = rawPath.trim()
+  if (!pathname) {
+    return { pathname: '', query }
+  }
+
+  pathname = pathname.replace(/^\/+/, '')
+
+  if (pathname.startsWith(NETLIFY_PREFIX.slice(1))) {
+    pathname = pathname.slice(NETLIFY_PREFIX.length - 1)
+  }
+
+  if (pathname.startsWith(API_PREFIX.slice(1))) {
+    pathname = pathname.slice(API_PREFIX.length - 1)
+  }
+
+  pathname = pathname.replace(/^\/+/, '')
+
+  return { pathname, query }
 }
 
-export const REMOTE_BASE_CONFIG = normalizeRemoteBase(RAW_REMOTE_FUNCTION_BASE)
-export const REMOTE_FUNCTION_BASE = REMOTE_BASE_CONFIG.functionBase
-export const REMOTE_API_BASE = REMOTE_BASE_CONFIG.apiBase
-export const REMOTE_BASE_INCLUDES_FUNCTION_PREFIX = REMOTE_BASE_CONFIG.includesFunctionPrefix
-
-export function joinUrl(base: string, path: string) {
-  const normalizedBase = base.replace(/\/$/, '')
-  const normalizedPath = path.replace(/^\//, '')
-  return `${normalizedBase}/${normalizedPath}`
+function buildUrl(base: string, pathname: string, query: string): string {
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  const trimmedPath = pathname.replace(/^\/+/, '')
+  const url = trimmedPath
+    ? `${normalizedBase}${trimmedPath}`
+    : normalizedBase.replace(/\/$/, '')
+  return query ? `${url}?${query}` : url
 }
 
-export {
-  NETLIFY_PREFIX,
-  API_PREFIX,
-  LOCAL_NETLIFY_ORIGIN
+export function buildFunctionCandidates(path: string): string[] {
+  if (/^https?:\/\//i.test(path)) {
+    return [path]
+  }
+
+  const { pathname, query } = normalizePath(path)
+  const candidates = [
+    buildUrl(API_PREFIX, pathname, query),
+    buildUrl(NETLIFY_PREFIX, pathname, query),
+    ...LOCAL_NETLIFY_HOSTS.map((host) => buildUrl(host, pathname, query))
+  ]
+
+  return Array.from(new Set(candidates))
 }
+
+export function buildFunctionUrl(path: string): string {
+  return buildFunctionCandidates(path)[0]
+}
+
+export { NETLIFY_PREFIX, API_PREFIX }
