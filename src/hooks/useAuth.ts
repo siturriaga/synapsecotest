@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react'
-import { auth, googleSignIn, logout, onAuth, resolveRedirectResult } from '../firebase'
+import {
+  auth,
+  AUTH_DISABLED_MESSAGE,
+  googleSignIn,
+  isAuthConfigured,
+  logout,
+  onAuth,
+  resolveRedirectResult
+} from '../firebase'
 import type { User } from 'firebase/auth'
 
 type AuthState = {
   user: User | null
   loading: boolean
   error?: string
+  authAvailable: boolean
 }
 
 export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: () => Promise<void> }] {
-  const [state, setState] = useState<AuthState>({ user: auth?.currentUser ?? null, loading: true })
+  const [state, setState] = useState<AuthState>({
+    user: auth?.currentUser ?? null,
+    loading: Boolean(auth),
+    error: undefined,
+    authAvailable: isAuthConfigured
+  })
 
   useEffect(() => {
     let mounted = true
@@ -30,9 +44,21 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
 
     checkRedirectResult()
 
+    if (!auth) {
+      setState((prev) => ({ ...prev, loading: false }))
+      return () => {
+        mounted = false
+      }
+    }
+
     const unsub = onAuth((u) => {
       if (!mounted) return
-      setState((prev) => ({ user: u, loading: false, error: u ? undefined : prev.error }))
+      setState((prev) => ({
+        user: u,
+        loading: false,
+        error: u ? undefined : prev.error,
+        authAvailable: prev.authAvailable
+      }))
     })
 
     return () => {
@@ -42,22 +68,40 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
   }, [])
 
   async function signIn() {
+    if (!isAuthConfigured) {
+      setState((prev) => ({ ...prev, loading: false, error: AUTH_DISABLED_MESSAGE, authAvailable: false }))
+      return
+    }
     try {
-      setState((prev) => ({ ...prev, loading: true, error: undefined }))
+      setState((prev) => ({ ...prev, loading: true, error: undefined, authAvailable: prev.authAvailable }))
       await googleSignIn()
     } catch (err: any) {
       console.error(err)
-      setState((prev) => ({ ...prev, loading: false, error: interpretAuthError(err) }))
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: interpretAuthError(err),
+        authAvailable: prev.authAvailable
+      }))
     }
   }
 
   async function signOut() {
+    if (!isAuthConfigured) {
+      setState((prev) => ({ ...prev, loading: false, authAvailable: false }))
+      return
+    }
     try {
-      setState((prev) => ({ ...prev, loading: true, error: undefined }))
+      setState((prev) => ({ ...prev, loading: true, error: undefined, authAvailable: prev.authAvailable }))
       await logout()
     } catch (err: any) {
       console.error(err)
-      setState((prev) => ({ ...prev, loading: false, error: interpretAuthError(err) }))
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: interpretAuthError(err),
+        authAvailable: prev.authAvailable
+      }))
     }
   }
 
