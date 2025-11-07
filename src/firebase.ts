@@ -1,4 +1,4 @@
-import { initializeApp, type FirebaseOptions } from 'firebase/app'
+import { getApp, getApps, initializeApp, type FirebaseOptions } from 'firebase/app'
 import {
   browserLocalPersistence,
   getAuth,
@@ -32,6 +32,25 @@ declare global {
   interface Window {
     __FIREBASE_CONFIG__?: FirebaseOptions
   }
+}
+
+type WarnRegistry = Partial<Record<string, boolean>>
+
+const globalObject: Record<string, any> =
+  typeof globalThis !== 'undefined'
+    ? (globalThis as Record<string, any>)
+    : typeof window !== 'undefined'
+      ? (window as unknown as Record<string, any>)
+      : {}
+
+const warnRegistry: WarnRegistry = globalObject.__SYNAPSE_WARNED__ ?? (globalObject.__SYNAPSE_WARNED__ = {})
+
+function warnOnce(key: string, message: string) {
+  if (warnRegistry[key]) {
+    return
+  }
+  warnRegistry[key] = true
+  console.warn(message)
 }
 
 function readEnvValue(key: string): string {
@@ -86,29 +105,38 @@ function resolveFirebaseConfig(): FirebaseOptions {
 
   const envConfig = buildEnvConfig()
   if (!isValidConfig(envConfig)) {
-    console.warn('Firebase configuration is incomplete. Check your VITE_FIREBASE_* values.')
+    warnOnce('firebase-config-incomplete', 'Firebase configuration is incomplete. Check your VITE_FIREBASE_* values.')
   }
   return envConfig
 }
 
 const firebaseConfig = resolveFirebaseConfig()
+const configValid = isValidConfig(firebaseConfig)
 
+const hasExistingApp = getApps().length > 0
 let appInstance: ReturnType<typeof initializeApp> | null = null
-try {
-  appInstance = initializeApp(firebaseConfig)
-} catch (error) {
-  console.error('Failed to initialize Firebase app', error)
+let initializedByModule = false
+
+if (hasExistingApp) {
+  appInstance = getApp()
+} else if (configValid) {
+  try {
+    appInstance = initializeApp(firebaseConfig)
+    initializedByModule = true
+  } catch (error) {
+    console.error('Failed to initialize Firebase app', error)
+  }
 }
 
 let authInstance: ReturnType<typeof getAuth> | null = null
-if (appInstance && firebaseConfig.apiKey) {
+if (appInstance) {
   try {
     authInstance = getAuth(appInstance)
   } catch (error) {
     console.error('Firebase auth unavailable. Check your VITE_FIREBASE_* configuration.', error)
   }
-} else {
-  console.warn('Firebase auth disabled. Provide valid VITE_FIREBASE_* values to enable sign-in.')
+} else if (!configValid) {
+  warnOnce('firebase-auth-disabled', 'Firebase auth disabled. Provide valid VITE_FIREBASE_* values to enable sign-in.')
 }
 
 export type FirestoreClient = ReturnType<typeof getFirestore>
@@ -116,9 +144,13 @@ export type FirestoreClient = ReturnType<typeof getFirestore>
 let firestoreInstance: FirestoreClient | null = null
 if (appInstance) {
   try {
-    firestoreInstance = initializeFirestore(appInstance, {
-      experimentalAutoDetectLongPolling: true
-    })
+    if (initializedByModule) {
+      firestoreInstance = initializeFirestore(appInstance, {
+        experimentalAutoDetectLongPolling: true
+      })
+    } else {
+      firestoreInstance = getFirestore(appInstance)
+    }
   } catch (error) {
     console.warn('Falling back to default Firestore initialization', error)
     firestoreInstance = getFirestore(appInstance)
@@ -128,7 +160,10 @@ if (appInstance) {
 export const app = appInstance
 export const auth = authInstance
 if (!firestoreInstance) {
-  console.warn('Firestore unavailable. Workspace data features will not load until configuration is fixed.')
+  warnOnce(
+    'firestore-unavailable',
+    'Firestore unavailable. Workspace data features will not load until configuration is fixed.'
+  )
 }
 export const db: FirestoreClient | null = firestoreInstance
 
