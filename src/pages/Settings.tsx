@@ -104,6 +104,47 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     }
   }
 
+  const defaultHelperDisplay = defaultHelper || 'Local project (/api/*)'
+
+  const buildHelperStatus = useCallback(
+    (nextBase: string) => {
+      const normalizedDefault = defaultHelper || ''
+      if (!nextBase || nextBase === normalizedDefault) {
+        return `Using the default Gemini helper (${defaultHelperDisplay}).`
+      }
+      return `Gemini helper set to ${nextBase}`
+    },
+    [defaultHelper, defaultHelperDisplay]
+  )
+
+  useEffect(() => {
+    setHelperStatus(buildHelperStatus(activeHelper))
+  }, [activeHelper, buildHelperStatus])
+
+  function handleHelperSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    try {
+      const trimmed = helperInput.trim()
+      const nextBase = trimmed ? setRemoteFunctionBaseOverride(trimmed) : clearRemoteFunctionBaseOverride()
+      setHelperInput(trimmed)
+      setActiveHelper(nextBase)
+      setHelperStatus(buildHelperStatus(nextBase))
+      setHelperError(null)
+    } catch (err: any) {
+      const message = typeof err?.message === 'string' ? err.message : 'Unable to update Gemini helper.'
+      setHelperError(message)
+      setHelperStatus('')
+    }
+  }
+
+  function handleHelperReset() {
+    const base = clearRemoteFunctionBaseOverride()
+    setHelperInput('')
+    setActiveHelper(base)
+    setHelperStatus(buildHelperStatus(base))
+    setHelperError(null)
+  }
+
   if (!user) {
     return (
       <div className="glass-card fade-in">

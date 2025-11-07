@@ -149,6 +149,18 @@ export function DynamicWelcome() {
     }
   }, [])
 
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
+    const interval = window.setInterval(() => {
+      setJokeState((prev) => ({ index: (prev.index + 1) % teacherJokes.length, cycle: prev.cycle + 1 }))
+    }, 12_000)
+
+    return () => window.clearInterval(interval)
+  }, [prefersReducedMotion])
+
   const scene = useMemo(() => pickScene(now), [now])
 
   const welcomeStyle = useMemo<WelcomeStyle>(

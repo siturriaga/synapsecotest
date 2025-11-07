@@ -183,7 +183,6 @@ export async function safeFetch<T>(path: string, options: RequestInit = {}): Pro
         }
         break
       }
-    }
 
     if (!lastError) {
       finalError = new Error('Request failed')
