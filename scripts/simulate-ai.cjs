@@ -47,6 +47,32 @@ async function main() {
     assert(/upstream failed/.test(String(error.message)), 'error message should include body excerpt')
   }
 
+  let attempt = 0
+  const fallbackCalls = []
+  global.fetch = async (url) => {
+    attempt += 1
+    fallbackCalls.push(url)
+    if (attempt === 1) {
+      return new Response('not found', { status: 404 })
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  await safeFetch('/generateAssignment')
+  assert.equal(
+    fallbackCalls[0],
+    '/api/generateAssignment',
+    'first fallback attempt should target /api/…'
+  )
+  assert.equal(
+    fallbackCalls[1],
+    '/.netlify/functions/generateAssignment',
+    'safeFetch should retry using /.netlify/functions after a 404'
+  )
+
   console.log('simulate:ai ok')
 }
 

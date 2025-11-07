@@ -77,6 +77,7 @@ export default function App() {
         <div className={`layout${isSidebarOpen && isNarrow ? ' layout--sidebar-open' : ''}`}>
           <Sidebar
             user={user}
+            authAvailable={authState.authAvailable}
             onSignIn={actions.signIn}
             onSignOut={actions.signOut}
             onDismiss={handleSidebarClose}
@@ -106,7 +107,17 @@ export default function App() {
                   Log out
                 </button>
               ) : (
-                <button type="button" className="mobile-auth-button" onClick={actions.signIn}>
+                <button
+                  type="button"
+                  className="mobile-auth-button"
+                  onClick={actions.signIn}
+                  disabled={!authState.authAvailable}
+                  title={
+                    authState.authAvailable
+                      ? undefined
+                      : 'Configure Firebase credentials in Settings → Diagnostics to enable Google sign-in.'
+                  }
+                >
                   Sign in
                 </button>
               )}

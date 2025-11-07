@@ -146,9 +146,14 @@ function detectPopupRestrictions() {
   return /iPad|iPhone|iPod/.test(ua)
 }
 
+const AUTH_DISABLED_MESSAGE =
+  'Google sign-in is unavailable because Firebase credentials are missing. Add the VITE_FIREBASE_* values in Netlify or review Settings → Diagnostics for setup help.'
+
+export const isAuthConfigured = Boolean(auth)
+
 export async function googleSignIn() {
   if (!auth) {
-    throw new Error('Google sign-in is not available because Firebase auth is not configured.')
+    throw new Error(AUTH_DISABLED_MESSAGE)
   }
 
   const authInstance = auth
@@ -212,4 +217,4 @@ const onAuth = (callback: Parameters<typeof onAuthStateChanged>[1]) => {
   return onAuthStateChanged(auth, callback)
 }
 
-export { logout, onAuth }
+export { logout, onAuth, AUTH_DISABLED_MESSAGE }

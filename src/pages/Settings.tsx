@@ -4,13 +4,6 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import {
-  clearRemoteFunctionBaseOverride,
-  getDefaultRemoteFunctionBase,
-  getRemoteFunctionBase,
-  getRemoteFunctionBaseOverride,
-  setRemoteFunctionBaseOverride
-} from '../utils/netlifyTargets'
-import {
   DEFAULT_APP_PREFERENCES,
   type AppPreferences,
   type TexturePreference,
