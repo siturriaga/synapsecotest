@@ -15,6 +15,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFound'))
 export default function App() {
   const [authState, actions] = useAuth()
   const user = authState.user
+  const authEnabled = authState.authConfigured
   const [isSidebarOpen, setSidebarOpen] = useState(false)
   const [isNarrow, setIsNarrow] = useState(false)
 
@@ -77,6 +78,7 @@ export default function App() {
         <div className={`layout${isSidebarOpen && isNarrow ? ' layout--sidebar-open' : ''}`}>
           <Sidebar
             user={user}
+            authEnabled={authEnabled}
             onSignIn={actions.signIn}
             onSignOut={actions.signOut}
             onDismiss={handleSidebarClose}
@@ -105,9 +107,13 @@ export default function App() {
                 <button type="button" className="mobile-auth-button" onClick={actions.signOut}>
                   Log out
                 </button>
-              ) : (
+              ) : authEnabled ? (
                 <button type="button" className="mobile-auth-button" onClick={actions.signIn}>
                   Sign in
+                </button>
+              ) : (
+                <button type="button" className="mobile-auth-button" disabled>
+                  Sign in unavailable
                 </button>
               )}
             </div>
