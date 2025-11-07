@@ -593,7 +593,16 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       return
     }
 
-    const statsRef = doc(db, `users/${user.uid}/dashboard_stats/metrics`)
+    const database = db
+    if (!database) {
+      console.warn('Firestore unavailable. Dashboard data will not load until configuration is restored.')
+      setRawStats([])
+      setAssignments([])
+      setAssessmentSummaries([])
+      return
+    }
+
+    const statsRef = doc(database, `users/${user.uid}/dashboard_stats/metrics`)
     const unsubStats = onSnapshot(statsRef, (snap) => {
       const data = snap.data() || {}
       const cards: StatCard[] = []
@@ -641,7 +650,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       setRawStats(cards)
     })
 
-    const assignmentQuery = query(collection(db, `users/${user.uid}/assignments`), orderBy('dueDate', 'asc'))
+    const assignmentQuery = query(collection(database, `users/${user.uid}/assignments`), orderBy('dueDate', 'asc'))
     const unsubAssignments = onSnapshot(assignmentQuery, (snap) => {
       const rows: AssignmentSummary[] = []
       snap.forEach((docSnap) => {
@@ -656,7 +665,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       setAssignments(rows.slice(0, 6))
     })
 
-    const summaryQuery = query(collection(db, `users/${user.uid}/assessments_summary`), orderBy('updatedAt', 'desc'))
+    const summaryQuery = query(collection(database, `users/${user.uid}/assessments_summary`), orderBy('updatedAt', 'desc'))
     const unsubSummary = onSnapshot(summaryQuery, (snap) => {
       const rows: AssessmentSnapshot[] = []
       snap.forEach((docSnap) => {
@@ -681,7 +690,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       unsubAssignments()
       unsubSummary()
     }
-  }, [user])
+  }, [user, db])
 
   const handleClearStats = useCallback(async () => {
     if (!user) return

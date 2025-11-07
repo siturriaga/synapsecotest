@@ -97,6 +97,15 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return
     }
 
+    const database = db
+    if (!database) {
+      console.warn('Firestore unavailable. Roster data will not sync until configuration is restored.')
+      setLoading(false)
+      setSyncStatus('error')
+      setSyncError('Workspace storage is offline. Uploads and AI summaries are paused until Firestore returns.')
+      return
+    }
+
     setLoading(true)
     let recordsLoaded = false
     let summariesLoaded = false
@@ -110,7 +119,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     }
 
     const assessmentsQuery = query(
-      collection(db, `users/${user.uid}/assessments`),
+      collection(database, `users/${user.uid}/assessments`),
       orderBy('createdAt', 'desc'),
       limit(200)
     )
@@ -145,7 +154,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     })
 
     const summariesQuery = query(
-      collection(db, `users/${user.uid}/assessments_summary`),
+      collection(database, `users/${user.uid}/assessments_summary`),
       orderBy('updatedAt', 'desc'),
       limit(50)
     )
@@ -172,7 +181,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     })
 
     const studentsQuery = query(
-      collection(db, `users/${user.uid}/students`),
+      collection(database, `users/${user.uid}/students`),
       orderBy('updatedAt', 'desc'),
       limit(200)
     )
@@ -202,7 +211,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     })
 
     const uploadsQuery = query(
-      collection(db, `users/${user.uid}/uploads`),
+      collection(database, `users/${user.uid}/uploads`),
       orderBy('createdAt', 'desc'),
       limit(12)
     )
@@ -252,7 +261,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       unsubscribeStudents()
       unsubscribeUploads()
     }
-  }, [user])
+  }, [user, db])
 
   const groupResult = useMemo(() => buildGroupInsights(records, summaries[0] ?? null), [records, summaries])
   const groupInsights = groupResult.groups
@@ -317,6 +326,15 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return true
     }
 
+    const database = db
+    if (!database) {
+      console.warn('Firestore unavailable. Skipping roster snapshot persistence.')
+      setSyncStatus('error')
+      setSyncError('Workspace storage is offline. Snapshots cannot be saved right now.')
+      hasPendingSync.current = true
+      return false
+    }
+
     const snapshotRecords = records
     const snapshotSummaries = summaries
     const snapshotStudents = students
@@ -341,7 +359,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
 
     try {
       const nowIso = new Date().toISOString()
-      const docRef = doc(db, `users/${user.uid}/workspace_cache/rosterSnapshot`)
+      const docRef = doc(database, `users/${user.uid}/workspace_cache/rosterSnapshot`)
       const scored = snapshotRecords
         .filter((record) => typeof record.score === 'number')
         .sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity))
@@ -363,7 +381,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
         recordedAt: record.createdAt ? record.createdAt.toISOString() : null
       }))
 
-      const metricsRef = doc(db, `users/${user.uid}/dashboard_stats/metrics`)
+      const metricsRef = doc(database, `users/${user.uid}/dashboard_stats/metrics`)
       const metricsSnap = await getDoc(metricsRef)
       const previousRosterGroupCount = metricsSnap.exists()
         ? Number(metricsSnap.data()?.rosterGroupCount ?? metricsSnap.data()?.groupCount ?? 0)
@@ -507,7 +525,8 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     students,
     uploads,
     groupInsights,
-    pedagogicalGuidance
+    pedagogicalGuidance,
+    db
   ])
 
   useEffect(() => {
