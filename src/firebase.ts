@@ -209,3 +209,11 @@ export const onAuth = (callback: Parameters<typeof onAuthStateChanged>[1]) => {
   }
   return onAuthStateChanged(auth, callback)
 }
+
+export async function logout() {
+  await signOut(auth)
+}
+
+export function onAuth(callback: Parameters<typeof onAuthStateChanged>[1]) {
+  return onAuthStateChanged(auth, callback)
+}

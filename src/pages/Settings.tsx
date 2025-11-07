@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import {
+  clearRemoteFunctionBaseOverride,
+  getDefaultRemoteFunctionBase,
+  getRemoteFunctionBase,
+  getRemoteFunctionBaseOverride,
+  setRemoteFunctionBaseOverride
+} from '../utils/netlifyTargets'
 import {
   DEFAULT_APP_PREFERENCES,
   type AppPreferences,
@@ -28,6 +35,11 @@ export default function SettingsPage({ user }: SettingsPageProps) {
   const [preferences, setPreferences] = useState<Preferences>(() => createDefaultPreferences())
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [helperInput, setHelperInput] = useState<string>(() => getRemoteFunctionBaseOverride() ?? '')
+  const [helperStatus, setHelperStatus] = useState<string>('')
+  const [helperError, setHelperError] = useState<string | null>(null)
+  const [activeHelper, setActiveHelper] = useState<string>(() => getRemoteFunctionBase())
+  const defaultHelper = useMemo(() => getDefaultRemoteFunctionBase(), [])
   const accentLabel = useMemo(() => preferences.accentColor.toUpperCase(), [preferences.accentColor])
   const surfaceLabel = useMemo(() => preferences.surfaceColor.toUpperCase(), [preferences.surfaceColor])
   const selectedTexture = useMemo(
@@ -69,6 +81,47 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       console.error(err)
       setError(err?.message ?? 'Failed to save preferences.')
     }
+  }
+
+  const defaultHelperDisplay = defaultHelper || 'Local project (/api/*)'
+
+  const buildHelperStatus = useCallback(
+    (nextBase: string) => {
+      const normalizedDefault = defaultHelper || ''
+      if (!nextBase || nextBase === normalizedDefault) {
+        return `Using the default Gemini helper (${defaultHelperDisplay}).`
+      }
+      return `Gemini helper set to ${nextBase}`
+    },
+    [defaultHelper, defaultHelperDisplay]
+  )
+
+  useEffect(() => {
+    setHelperStatus(buildHelperStatus(activeHelper))
+  }, [activeHelper, buildHelperStatus])
+
+  function handleHelperSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    try {
+      const trimmed = helperInput.trim()
+      const nextBase = trimmed ? setRemoteFunctionBaseOverride(trimmed) : clearRemoteFunctionBaseOverride()
+      setHelperInput(trimmed)
+      setActiveHelper(nextBase)
+      setHelperStatus(buildHelperStatus(nextBase))
+      setHelperError(null)
+    } catch (err: any) {
+      const message = typeof err?.message === 'string' ? err.message : 'Unable to update Gemini helper.'
+      setHelperError(message)
+      setHelperStatus('')
+    }
+  }
+
+  function handleHelperReset() {
+    const base = clearRemoteFunctionBaseOverride()
+    setHelperInput('')
+    setActiveHelper(base)
+    setHelperStatus(buildHelperStatus(base))
+    setHelperError(null)
   }
 
   if (!user) {
@@ -206,6 +259,67 @@ export default function SettingsPage({ user }: SettingsPageProps) {
         </form>
         {status && <p style={{ marginTop: 12, color: 'var(--text-muted)' }}>{status}</p>}
         {error && <p style={{ marginTop: 12, color: '#fecaca' }}>{error}</p>}
+      </section>
+      <section className="glass-card" style={{ display: 'grid', gap: 18 }}>
+        <h2 style={{ margin: '4px 0 6px', fontSize: 26, fontWeight: 800 }}>Gemini helper connection</h2>
+        <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          Keep the quiz generator online by pointing Synapse at the Netlify helper that already knows your Firebase and Gemini
+          secrets. Codespaces and other cloud editors can rely on this instead of running <code>netlify dev</code> locally.
+        </p>
+        <form onSubmit={handleHelperSubmit} style={{ display: 'grid', gap: 16 }}>
+          <div className="field">
+            <label htmlFor="remote-helper-url">Remote helper URL</label>
+            <input
+              id="remote-helper-url"
+              name="remote-helper-url"
+              value={helperInput}
+              onChange={(event) => {
+                setHelperInput(event.target.value)
+                setHelperError(null)
+                setHelperStatus('')
+              }}
+              placeholder={defaultHelper || 'https://your-site.netlify.app'}
+              spellCheck={false}
+            />
+            <small style={{ color: 'var(--text-muted)' }}>
+              Leave blank to fall back to <strong>{defaultHelperDisplay}</strong>.
+            </small>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button type="submit" className="primary">
+              Save helper
+            </button>
+            <button type="button" className="secondary" onClick={handleHelperReset}>
+              Use default helper
+            </button>
+          </div>
+        </form>
+        <div
+          style={{
+            background: 'var(--surface-elevated)',
+            borderRadius: 12,
+            padding: '12px 16px',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-muted)',
+            fontSize: 13,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4
+          }}
+        >
+          <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>Active helper</span>
+          <span style={{ wordBreak: 'break-word' }}>{activeHelper || defaultHelperDisplay}</span>
+        </div>
+        {helperStatus ? (
+          <p style={{ margin: 0, fontWeight: 600 }} className="status-success">
+            {helperStatus}
+          </p>
+        ) : null}
+        {helperError ? (
+          <p style={{ margin: 0, fontWeight: 600 }} className="status-danger">
+            {helperError}
+          </p>
+        ) : null}
       </section>
     </div>
   )
