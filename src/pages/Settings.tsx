@@ -4,6 +4,13 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import {
+  clearRemoteFunctionBaseOverride,
+  getDefaultRemoteFunctionBase,
+  getRemoteFunctionBase,
+  getRemoteFunctionBaseOverride,
+  setRemoteFunctionBaseOverride
+} from '../utils/netlifyTargets'
+import {
   DEFAULT_APP_PREFERENCES,
   type AppPreferences,
   type TexturePreference,
@@ -102,6 +109,47 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       console.error(err)
       setError(err?.message ?? 'Failed to save preferences.')
     }
+  }
+
+  const defaultHelperDisplay = defaultHelper || 'Local project (/api/*)'
+
+  const buildHelperStatus = useCallback(
+    (nextBase: string) => {
+      const normalizedDefault = defaultHelper || ''
+      if (!nextBase || nextBase === normalizedDefault) {
+        return `Using the default Gemini helper (${defaultHelperDisplay}).`
+      }
+      return `Gemini helper set to ${nextBase}`
+    },
+    [defaultHelper, defaultHelperDisplay]
+  )
+
+  useEffect(() => {
+    setHelperStatus(buildHelperStatus(activeHelper))
+  }, [activeHelper, buildHelperStatus])
+
+  function handleHelperSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    try {
+      const trimmed = helperInput.trim()
+      const nextBase = trimmed ? setRemoteFunctionBaseOverride(trimmed) : clearRemoteFunctionBaseOverride()
+      setHelperInput(trimmed)
+      setActiveHelper(nextBase)
+      setHelperStatus(buildHelperStatus(nextBase))
+      setHelperError(null)
+    } catch (err: any) {
+      const message = typeof err?.message === 'string' ? err.message : 'Unable to update Gemini helper.'
+      setHelperError(message)
+      setHelperStatus('')
+    }
+  }
+
+  function handleHelperReset() {
+    const base = clearRemoteFunctionBaseOverride()
+    setHelperInput('')
+    setActiveHelper(base)
+    setHelperStatus(buildHelperStatus(base))
+    setHelperError(null)
   }
 
   if (!user) {
