@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
-import { auth, googleSignIn, logout, onAuth, resolveRedirectResult } from '../firebase'
+import {
+  auth,
+  firebaseReady,
+  googleSignIn,
+  isFirebaseAuthConfigured,
+  isFirebaseInitialized,
+  logout,
+  onAuth,
+  resolveRedirectResult
+} from '../firebase'
 import type { User } from 'firebase/auth'
 
 type AuthState = {
@@ -10,65 +19,82 @@ type AuthState = {
 }
 
 export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: () => Promise<void> }] {
-  const authConfigured = Boolean(auth)
-  const [state, setState] = useState<AuthState>({
-    user: auth?.currentUser ?? null,
-    loading: authConfigured,
-    authConfigured,
-    error: undefined
+  const [state, setState] = useState<AuthState>(() => {
+    const initialized = isFirebaseInitialized()
+    const configured = isFirebaseAuthConfigured()
+    return {
+      user: configured && auth ? auth.currentUser ?? null : null,
+      loading: !initialized,
+      authConfigured: configured,
+      error: undefined
+    }
   })
 
   useEffect(() => {
-    if (!authConfigured) {
-      setState((prev) => ({ ...prev, loading: false }))
-      return
-    }
+    let active = true
+    let unsubscribe: (() => void) | undefined
 
-    let mounted = true
+    async function initializeAuth() {
+      await firebaseReady
+      if (!active) {
+        return
+      }
 
-    async function checkRedirectResult() {
+      const configured = isFirebaseAuthConfigured()
+      if (!configured) {
+        setState((prev) => ({ ...prev, loading: false, authConfigured: false }))
+        return
+      }
+
       try {
         await resolveRedirectResult()
       } catch (err: any) {
-        if (err?.code === 'auth/no-auth-event') {
-          return
-        }
-        console.error(err)
-        if (mounted) {
-          setState((prev) => ({ ...prev, loading: false, error: interpretAuthError(err) }))
+        if (err?.code !== 'auth/no-auth-event') {
+          console.error(err)
+          if (active) {
+            setState((prev) => ({ ...prev, loading: false, error: interpretAuthError(err) }))
+          }
         }
       }
+
+      if (!active) {
+        return
+      }
+
+      unsubscribe = onAuth((u) => {
+        if (!active) return
+        setState((prev) => ({
+          user: u,
+          loading: false,
+          authConfigured: true,
+          error: u ? undefined : prev.error
+        }))
+      })
     }
 
-    checkRedirectResult()
-
-    const unsub = onAuth((u) => {
-      if (!mounted) return
-      setState((prev) => ({
-        user: u,
-        loading: false,
-        authConfigured,
-        error: u ? undefined : prev.error
-      }))
-    })
+    initializeAuth()
 
     return () => {
-      mounted = false
-      unsub()
+      active = false
+      unsubscribe?.()
     }
   }, [authConfigured])
 
   async function signIn() {
-    if (!authConfigured) {
+    setState((prev) => ({ ...prev, loading: true, error: undefined }))
+    await firebaseReady
+
+    if (!isFirebaseAuthConfigured()) {
       setState((prev) => ({
         ...prev,
         loading: false,
+        authConfigured: false,
         error: 'Google sign-in is disabled because Firebase auth is not configured.'
       }))
       return
     }
+
     try {
-      setState((prev) => ({ ...prev, loading: true, error: undefined }))
       await googleSignIn()
     } catch (err: any) {
       console.error(err)
@@ -77,16 +103,20 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
   }
 
   async function signOut() {
-    if (!authConfigured) {
+    setState((prev) => ({ ...prev, loading: true, error: undefined }))
+    await firebaseReady
+
+    if (!isFirebaseAuthConfigured()) {
       setState((prev) => ({
         ...prev,
         loading: false,
+        authConfigured: false,
         error: 'No authentication session to sign out from.'
       }))
       return
     }
+
     try {
-      setState((prev) => ({ ...prev, loading: true, error: undefined }))
       await logout()
     } catch (err: any) {
       console.error(err)
