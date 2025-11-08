@@ -4,6 +4,9 @@ import { useAuth } from './hooks/useAuth'
 import { Sidebar } from './components/core/Sidebar'
 import { RosterDataProvider } from './hooks/useRosterData'
 import { PreferencesProvider } from './hooks/usePreferences'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { firebaseIsConfigured } from './firebase'
+
 const DashboardPage = lazy(() => import('./pages/Dashboard'))
 const RosterUploadPage = lazy(() => import('./pages/Roster'))
 const StudentGroupsPage = lazy(() => import('./pages/Groups'))
@@ -13,8 +16,8 @@ const SettingsPage = lazy(() => import('./pages/Settings'))
 const NotFoundPage = lazy(() => import('./pages/NotFound'))
 
 export default function App() {
-  const [authState, actions] = useAuth()
-  const user = authState.user
+  const { user, loading, available, signIn, logout } = useAuth()
+  const authEnabled = available
   const [isSidebarOpen, setSidebarOpen] = useState(false)
   const [isNarrow, setIsNarrow] = useState(false)
 
@@ -58,7 +61,7 @@ export default function App() {
     () => (
       <Suspense fallback={<div style={{ padding: 24 }}>Loading experience…</div>}>
         <Switch>
-          <Route path="/" component={() => <DashboardPage user={user} loading={authState.loading} />} />
+          <Route path="/" component={() => <DashboardPage user={user} loading={loading} />} />
           <Route path="/roster" component={() => <RosterUploadPage user={user} />} />
           <Route path="/groups" component={() => <StudentGroupsPage user={user} />} />
           <Route path="/standards" component={() => <StandardsEnginePage user={user} />} />
@@ -68,58 +71,65 @@ export default function App() {
         </Switch>
       </Suspense>
     ),
-    [user, authState.loading]
+    [user, loading]
   )
 
   return (
-    <RosterDataProvider user={user}>
-      <PreferencesProvider user={user}>
-        <div className={`layout${isSidebarOpen && isNarrow ? ' layout--sidebar-open' : ''}`}>
-          <Sidebar
-            user={user}
-            onSignIn={actions.signIn}
-            onSignOut={actions.signOut}
-            onDismiss={handleSidebarClose}
-            aria-hidden={isNarrow && !isSidebarOpen ? true : undefined}
-            data-open={isSidebarOpen && isNarrow ? 'true' : undefined}
-          />
-          <button
-            type="button"
-            className="layout__backdrop"
-            aria-hidden={isSidebarOpen ? 'false' : 'true'}
-            onClick={handleSidebarClose}
-          />
-          <main className="layout__main">
-            <div className="layout__mobile-bar">
-              <button
-                type="button"
-                className="mobile-menu-button"
-                aria-label="Toggle navigation"
-                aria-expanded={isSidebarOpen}
-                onClick={handleSidebarToggle}
-              >
-                <span aria-hidden="true">☰</span>
-              </button>
-              <div className="layout__mobile-title">Synapse</div>
-              {user ? (
-                <button type="button" className="mobile-auth-button" onClick={actions.signOut}>
-                  Log out
+    <ErrorBoundary>
+      <RosterDataProvider user={user}>
+        <PreferencesProvider user={user}>
+          <div className={`layout${isSidebarOpen && isNarrow ? ' layout--sidebar-open' : ''}`}>
+            <Sidebar
+              user={user}
+              authEnabled={authEnabled}
+              onSignIn={signIn}
+              onSignOut={logout}
+              onDismiss={handleSidebarClose}
+              aria-hidden={isNarrow && !isSidebarOpen ? true : undefined}
+              data-open={isSidebarOpen && isNarrow ? 'true' : undefined}
+            />
+            <button
+              type="button"
+              className="layout__backdrop"
+              aria-hidden={isSidebarOpen ? 'false' : 'true'}
+              onClick={handleSidebarClose}
+            />
+            <main className="layout__main">
+              <div className="layout__mobile-bar">
+                <button
+                  type="button"
+                  className="mobile-menu-button"
+                  aria-label="Toggle navigation"
+                  aria-expanded={isSidebarOpen}
+                  onClick={handleSidebarToggle}
+                >
+                  <span aria-hidden="true">☰</span>
                 </button>
-              ) : (
-                <button type="button" className="mobile-auth-button" onClick={actions.signIn}>
-                  Sign in
-                </button>
-              )}
-            </div>
-            {authState.error && (
-              <div className="glass-card" style={{ marginBottom: 20, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca' }}>
-                {authState.error}
+                <div className="layout__mobile-title">Synapse</div>
+                {user ? (
+                  <button type="button" className="mobile-auth-button" onClick={logout}>
+                    Log out
+                  </button>
+                ) : authEnabled ? (
+                  <button type="button" className="mobile-auth-button" onClick={signIn}>
+                    Sign in
+                  </button>
+                ) : (
+                  <button type="button" className="mobile-auth-button" disabled>
+                    Sign in unavailable
+                  </button>
+                )}
               </div>
-            )}
-            {content}
-          </main>
-        </div>
-      </PreferencesProvider>
-    </RosterDataProvider>
+              {!firebaseIsConfigured() && (
+                <div style={{background:"#fff3cd", color:"#664d03", padding:"8px 12px", border:"1px solid #ffe69c", borderRadius:8, margin:"8px 12px"}}>
+                  <strong>Configuration:</strong> Firebase keys not injected at build time (VITE_FIREBASE_*).
+                </div>
+              )}
+              {content}
+            </main>
+          </div>
+        </PreferencesProvider>
+      </RosterDataProvider>
+    </ErrorBoundary>
   )
 }
