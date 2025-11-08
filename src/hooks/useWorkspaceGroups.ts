@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
-import { db } from '../firebase'
+import { collection, getFirestore, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { ensureFirebase } from '../firebase'
 
 export type WorkspaceGroupStudent = {
   id: string
@@ -104,7 +104,8 @@ export function useWorkspaceGroups(user: User | null) {
       return
     }
 
-    if (!db) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Workspace groups cannot be loaded.')
       setGroups([])
       setLoading(false)
@@ -112,7 +113,7 @@ export function useWorkspaceGroups(user: User | null) {
     }
 
     setLoading(true)
-    const database = db
+    const database = getFirestore(app)
     const groupsQuery = query(collection(database, `users/${user.uid}/groups`), orderBy('createdAt', 'desc'))
     const unsubscribe = onSnapshot(groupsQuery, (snapshot) => {
       const rows: WorkspaceGroup[] = []
@@ -123,7 +124,7 @@ export function useWorkspaceGroups(user: User | null) {
       setLoading(false)
     })
     return () => unsubscribe()
-  }, [user, db])
+  }, [user])
 
   const insights = useMemo<GroupInsightsSummary | null>(() => {
     if (!groups.length) return null
