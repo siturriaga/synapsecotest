@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore'
+import { ensureFirebase } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import {
   clearRemoteFunctionBaseOverride,
@@ -69,13 +69,15 @@ export default function SettingsPage({ user }: SettingsPageProps) {
         return
       }
 
-      if (!db) {
+      const { app } = ensureFirebase()
+      if (!app) {
         console.warn('Firestore unavailable. Unable to load user preferences.')
         setError('Workspace storage is offline. Preferences will stay at their defaults until it returns.')
         return
       }
 
-      const ref = doc(db, `users/${user.uid}/preferences/app`)
+      const database = getFirestore(app)
+      const ref = doc(database, `users/${user.uid}/preferences/app`)
       const snap = await getDoc(ref)
       setPreferences(sanitizePreferences(snap.exists() ? (snap.data() as Partial<Preferences>) : undefined))
     }
@@ -86,7 +88,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
     refreshHealth().catch((err) => {
       console.error(err)
     })
-  }, [user, db, refreshHealth])
+  }, [user, refreshHealth])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -94,12 +96,14 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       setError('Sign in first.')
       return
     }
-    if (!db) {
+    const { app } = ensureFirebase()
+    if (!app) {
       setError('Workspace storage is offline. Preferences cannot be saved right now.')
       return
     }
     try {
-      const ref = doc(db, `users/${user.uid}/preferences/app`)
+      const database = getFirestore(app)
+      const ref = doc(database, `users/${user.uid}/preferences/app`)
       const cleaned = sanitizePreferences(preferences)
       await setDoc(ref, cleaned, { merge: true })
       setPreferences(cleaned)

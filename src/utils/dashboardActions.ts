@@ -3,15 +3,20 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getFirestore,
   limit as limitDocs,
   query,
   writeBatch,
   type Firestore,
   type DocumentReference
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { ensureFirebase } from '../firebase'
 
-async function clearCollection(path: string, database: Firestore | null = db) {
+function getDatabase(): Firestore | null {
+  const { app } = ensureFirebase()
+  return app ? getFirestore(app) : null
+}
+async function clearCollection(path: string, database: Firestore | null = getDatabase()) {
   if (!database) {
     console.warn(`Firestore unavailable. Skipping collection clear for ${path}.`)
     return
@@ -43,11 +48,12 @@ async function clearDocument(ref: DocumentReference | null) {
 }
 
 export async function clearDashboardMetrics(userId: string) {
-  if (!db) {
+  const database = getDatabase()
+  if (!database) {
     console.warn('Firestore unavailable. Cannot clear dashboard metrics.')
     return
   }
-  await clearDocument(doc(db, `users/${userId}/dashboard_stats/metrics`))
+  await clearDocument(doc(database, `users/${userId}/dashboard_stats/metrics`))
 }
 
 export async function clearLogs(userId: string) {
@@ -75,12 +81,13 @@ export async function clearUploads(userId: string) {
 }
 
 export async function clearWorkspaceCache(userId: string) {
-  if (!db) {
+  const database = getDatabase()
+  if (!database) {
     console.warn('Firestore unavailable. Cannot clear workspace cache.')
     return
   }
-  await clearDocument(doc(db, `users/${userId}/workspace_cache/rosterSnapshot`))
-  await clearDocument(doc(db, `users/${userId}/workspace_cache/groupInsights`))
+  await clearDocument(doc(database, `users/${userId}/workspace_cache/rosterSnapshot`))
+  await clearDocument(doc(database, `users/${userId}/workspace_cache/groupInsights`))
 }
 
 export async function clearRosterData(userId: string) {
