@@ -78,7 +78,7 @@ export function useAuth(): [AuthState, { signIn: () => Promise<void>; signOut: (
       active = false
       unsubscribe?.()
     }
-  }, [])
+  }, [authConfigured])
 
   async function signIn() {
     setState((prev) => ({ ...prev, loading: true, error: undefined }))
