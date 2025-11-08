@@ -1,110 +1,54 @@
-import { getApp, getApps, initializeApp, type FirebaseOptions } from 'firebase/app'
-import {
-  browserLocalPersistence,
-  getAuth,
-  GoogleAuthProvider,
-  inMemoryPersistence,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut,
-  getRedirectResult,
-  setPersistence
-} from 'firebase/auth'
-import { getFirestore, initializeFirestore } from 'firebase/firestore'
-import {
-  API_PREFIX,
-  LOCAL_NETLIFY_ORIGIN,
-  NETLIFY_PREFIX,
-  getRemoteBaseConfig,
-  joinUrl
-} from './utils/netlifyTargets'
+import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
-const REQUIRED_CONFIG_KEYS: Array<keyof FirebaseOptions> = [
-  'apiKey',
-  'authDomain',
-  'projectId',
-  'messagingSenderId',
-  'appId'
-]
+type FirebaseBundle = {
+  app: FirebaseApp | null;
+  auth: Auth | null;
+  googleProvider: GoogleAuthProvider | null;
+  db: Firestore | null;
+  missing: string[];
+};
 
-const POPUP_FALLBACK_CODES = new Set([
-  'auth/popup-blocked',
-  'auth/internal-error'
-])
+let _bundle: FirebaseBundle | null = null;
 
-type EnvLookup = Record<string, string | undefined>
-
-declare global {
-  interface Window {
-    __FIREBASE_CONFIG__?: FirebaseOptions
-  }
+function collectConfig() {
+  const cfg = {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, // NO "https://"
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  };
+  const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
+  return { cfg, missing };
 }
 
-type WarnRegistry = Partial<Record<string, boolean>>
+/** Lazy initializer. Never throws during import; records missing vars. */
+export function ensureFirebase(): FirebaseBundle {
+  if (_bundle) return _bundle;
 
-const globalObject: Record<string, any> =
-  typeof globalThis !== 'undefined'
-    ? (globalThis as Record<string, any>)
-    : typeof window !== 'undefined'
-      ? (window as unknown as Record<string, any>)
-      : {}
+  const { cfg, missing } = collectConfig();
 
-const warnRegistry: WarnRegistry = globalObject.__SYNAPSE_WARNED__ ?? (globalObject.__SYNAPSE_WARNED__ = {})
-
-function warnOnce(key: string, message: string) {
-  if (warnRegistry[key]) {
-    return
+  if (missing.length) {
+    console.error("Firebase config missing:", missing.join(", "));
+    _bundle = { app: null, auth: null, googleProvider: null, db: null, missing };
+    return _bundle;
   }
-  warnRegistry[key] = true
-  console.warn(message)
+
+  const app = getApps().length ? getApps()[0] : initializeApp(cfg);
+  const auth = getAuth(app);
+  const googleProvider = new GoogleAuthProvider();
+  const db = getFirestore(app);
+
+  _bundle = { app, auth, googleProvider, db, missing: [] };
+  return _bundle;
 }
 
-const REMOTE_CONFIG_ENDPOINT = 'firebaseConfig'
-
-function readEnvValue(key: string): string {
-  const maybeImportMeta: any = typeof import.meta !== 'undefined' ? import.meta : undefined
-  const fromImportMeta = maybeImportMeta?.env?.[key]
-  if (typeof fromImportMeta === 'string' && fromImportMeta.trim().length > 0) {
-    return fromImportMeta.trim()
-  }
-
-  if (typeof process !== 'undefined' && typeof process.env === 'object') {
-    const fromProcess = (process.env as EnvLookup)[key]
-    if (typeof fromProcess === 'string' && fromProcess.trim().length > 0) {
-      return fromProcess.trim()
-    }
-  }
-
-  return ''
-}
-
-function buildEnvConfig(): FirebaseOptions {
-  const config: FirebaseOptions = {
-    apiKey: readEnvValue('VITE_FIREBASE_API_KEY'),
-    authDomain: readEnvValue('VITE_FIREBASE_AUTH_DOMAIN'),
-    projectId: readEnvValue('VITE_FIREBASE_PROJECT_ID'),
-    messagingSenderId: readEnvValue('VITE_FIREBASE_MESSAGING_SENDER_ID'),
-    appId: readEnvValue('VITE_FIREBASE_APP_ID')
-  }
-
-  const storageBucket = readEnvValue('VITE_FIREBASE_STORAGE_BUCKET')
-  if (storageBucket) {
-    config.storageBucket = storageBucket
-  }
-
-  return config
-}
-
-function isValidConfig(config: FirebaseOptions | undefined): config is FirebaseOptions {
-  if (!config) {
-    return false
-  }
-
-  return REQUIRED_CONFIG_KEYS.every((key) => {
-    const value = config[key]
-    return typeof value === 'string' && value.length > 0
-  })
+/** Convenience checker for UI. */
+export function firebaseIsConfigured(): boolean {
+  return ensureFirebase().missing.length === 0;
 }
 
 function buildRemoteConfigTargets(): string[] {
@@ -442,4 +386,4 @@ const onAuth = (callback: Parameters<typeof onAuthStateChanged>[1]) => {
   }
 }
 
-export { logout, onAuth }
+export default ensureFirebase;
