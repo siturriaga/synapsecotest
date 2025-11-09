@@ -1,13 +1,12 @@
 import type { Handler } from "@netlify/functions";
 import * as admin from "firebase-admin";
 
-/** Optional: keep Admin ready for future Firestore/Storage needs */
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      projectId: process.env.FIREBASE_PROJECT_ID!,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n")!,
     }),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
@@ -15,7 +14,6 @@ if (!admin.apps.length) {
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-/** Prefer these if available; otherwise fall back to first model that supports generateContent */
 const PREFERRED_MODELS = [
   "gemini-1.5-flash-latest",
   "gemini-1.5-flash",
@@ -32,12 +30,10 @@ async function listModels(): Promise<string[]> {
   const text = await res.text();
   if (!res.ok) throw new Error(`ListModels ${res.status}: ${text}`);
   const data = JSON.parse(text);
-  // Return only models that support generateContent
   const supported = (data?.models ?? [])
     .filter((m: any) => (m?.supportedGenerationMethods ?? []).includes("generateContent"))
     .map((m: any) => m.name?.replace(/^models\//, ""))
     .filter(Boolean);
-  // Keep preferred order when possible
   const byPref = PREFERRED_MODELS.filter(m => supported.includes(m));
   const remainder = supported.filter((m: string) => !byPref.includes(m));
   return [...byPref, ...remainder];
@@ -48,17 +44,14 @@ async function callGemini(model: string, prompt: string): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
   const body = { contents: [{ role: "user", parts: [{ text: prompt }]}] };
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-
   const raw = await res.text();
   let json: any = null;
   try { json = JSON.parse(raw); } catch {}
-
   if (!res.ok) {
     const code = json?.error?.code ?? res.status;
     const msg  = json?.error?.message ?? raw || res.statusText;
     throw new Error(`Gemini ${code} on ${model}: ${msg}`);
   }
-
   const parts = json?.candidates?.[0]?.content?.parts ?? [];
   const text = parts.map((p: any) => p?.text || "").join("").trim();
   if (!text) throw new Error(`Gemini ${model} returned no text`);
@@ -69,17 +62,12 @@ export const handler: Handler = async (event) => {
   try {
     if (!event.body) return { statusCode: 400, body: "Missing body" };
     const payload = JSON.parse(event.body);
-
     const prompt =
       payload?.prompt ??
       payload?.standard ??
       "Create a 10-question multiple-choice quiz aligned to the provided standard, with answer key.";
-
-    // First try preferred models; if a 404 occurs, discover models and retry
     const tried: string[] = [];
-    const firstPass = [...PREFERRED_MODELS];
-    let modelsToTry = firstPass;
-
+    let modelsToTry = [...PREFERRED_MODELS];
     for (let pass = 0; pass < 2; pass++) {
       for (const model of modelsToTry) {
         try {
@@ -93,7 +81,6 @@ export const handler: Handler = async (event) => {
           tried.push(String(e?.message || e));
         }
       }
-      // Discover supported models only once (after first pass)
       if (pass === 0) {
         try {
           modelsToTry = await listModels();
@@ -103,7 +90,6 @@ export const handler: Handler = async (event) => {
         }
       }
     }
-
     return {
       statusCode: 502,
       headers: { "content-type": "application/json" },
