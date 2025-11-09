@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'wouter'
-import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, doc, getFirestore, onSnapshot, orderBy, query } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
-import { db } from '../firebase'
+import { ensureFirebase } from '../firebase'
 import { DynamicWelcome } from '../components/core/DynamicWelcome'
 import { DashboardCards, type StatCard } from '../components/core/DashboardCards'
 import { PrintButton } from '../components/core/PrintButton'
@@ -81,6 +81,8 @@ function average(values: number[]) {
 }
 
 export default function DashboardPage({ user, loading }: DashboardProps) {
+  const [joke, setJokeState] = useState<string>('')
+  void joke
   const [rawStats, setRawStats] = useState<StatCard[]>([])
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([])
   const [assessmentSummaries, setAssessmentSummaries] = useState<AssessmentSnapshot[]>([])
@@ -593,8 +595,8 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       return
     }
 
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Dashboard data will not load until configuration is restored.')
       setRawStats([])
       setAssignments([])
@@ -602,6 +604,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       return
     }
 
+    const database = getFirestore(app)
     const statsRef = doc(database, `users/${user.uid}/dashboard_stats/metrics`)
     const unsubStats = onSnapshot(statsRef, (snap) => {
       const data = snap.data() || {}
@@ -690,7 +693,7 @@ export default function DashboardPage({ user, loading }: DashboardProps) {
       unsubAssignments()
       unsubSummary()
     }
-  }, [user, db])
+  }, [user])
 
   const handleClearStats = useCallback(async () => {
     if (!user) return
