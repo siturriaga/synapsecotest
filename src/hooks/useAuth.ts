@@ -1,43 +1,84 @@
-import { useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { ensureFirebase } from "../firebase";
+// src/hooks/useAuth.ts
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  browserLocalPersistence,
+  setPersistence,
+  signOut,
+  User,
+} from "firebase/auth";
+import { initializeApp, getApps } from "firebase/app";
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, // optional
+};
+
+function ensureFirebase() {
+  if (!getApps().length) initializeApp(firebaseConfig);
+  const auth = getAuth();
+  const googleProvider = new GoogleAuthProvider();
+  return { auth, googleProvider };
+}
 
 export function useAuth() {
-  const [{ user, loading, available }, set] = useState({
-    user: null as import("firebase/auth").User | null,
-    loading: true,
-    available: true,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const fb = ensureFirebase();
-    if (!fb.auth) {
-      // Not configured; still allow app to render with banner
-      set(s => ({ ...s, loading: false, available: false }));
-      return;
-    }
+    const { auth } = ensureFirebase();
+    setPersistence(auth, browserLocalPersistence).catch(() => {});
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setReady(true);
+    });
+  }, []);
+
+  const signIn = useMemo(
+    () => async () => {
+      const { auth, googleProvider } = ensureFirebase();
+      try {
+        await signInWithPopup(auth, googleProvider);
+      } catch (err: any) {
+        const code = String(err?.code || "");
+        const needRedirect =
+          code.includes("auth/popup-blocked") ||
+          code.includes("auth/operation-not-supported-in-this-environment") ||
+          code.includes("auth/popup-closed-by-user") ||
+          code.includes("auth/cancelled-popup-request");
+        if (needRedirect) {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        }
+        throw err;
+      }
+    },
+    []
+  );
+
+  const getIdToken = useCallback(async () => {
+    if (!user) return null;
     try {
-      const unsub = onAuthStateChanged(fb.auth, (u) => {
-        set({ user: u, loading: false, available: true });
-      });
-      return () => unsub();
-    } catch (e) {
-      console.error("Auth unavailable:", e);
-      set({ user: null, loading: false, available: false });
+      return await user.getIdToken(false);
+    } catch {
+      return null;
     }
-  }, []);
+  }, [user]);
 
-  const signIn = useMemo(() => async () => {
-    const fb = ensureFirebase();
-    if (!fb.auth || !fb.googleProvider) throw new Error("Firebase auth unavailable.");
-    await signInWithPopup(fb.auth, fb.googleProvider);
-  }, []);
+  const signOutAll = useMemo(
+    () => async () => {
+      const { auth } = ensureFirebase();
+      await signOut(auth);
+    },
+    []
+  );
 
-  const logout = useMemo(() => async () => {
-    const fb = ensureFirebase();
-    if (!fb.auth) return;
-    await signOut(fb.auth);
-  }, []);
-
-  return { user, loading, available, signIn, logout };
+  return { user, ready, signIn, signOut: signOutAll, getIdToken };
 }
