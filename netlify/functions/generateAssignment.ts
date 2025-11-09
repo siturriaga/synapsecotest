@@ -1,7 +1,7 @@
 import type { Handler } from "@netlify/functions";
 import * as admin from "firebase-admin";
 
-/** Optional: initialize Firebase Admin for Firestore/Storage */
+/** Initialize Firebase Admin if not already */
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -56,7 +56,7 @@ async function callGemini(model: string, prompt: string): Promise<string> {
   try {
     json = JSON.parse(raw);
   } catch {
-    // non-JSON response body
+    // non-JSON response
   }
   if (!res.ok) {
     const code = json?.error?.code ?? res.status;
@@ -77,6 +77,7 @@ export const handler: Handler = async (event) => {
       return { statusCode: 400, body: "Missing body" };
     }
     const payload = JSON.parse(event.body);
+
     const prompt =
       payload.prompt ??
       payload.standard ??
