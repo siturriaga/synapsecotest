@@ -6,6 +6,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getFirestore,
   onSnapshot,
   updateDoc
 } from 'firebase/firestore'
@@ -17,7 +18,7 @@ type StandardDetails = {
   objectives?: string[]
 }
 import { safeFetch } from '../utils/safeFetch'
-import { db } from '../firebase'
+import { ensureFirebase } from '../firebase'
 import { useRosterData } from '../hooks/useRosterData'
 
 interface AssignmentsPageProps {
@@ -158,13 +159,14 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       setAssignments([])
       return
     }
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Assignments will not load until configuration is restored.')
       setStatusMessage('Workspace storage is offline. Existing assignments are temporarily hidden.')
       setAssignments([])
       return
     }
+    const database = getFirestore(app)
     const q = collection(database, `users/${user.uid}/assignments`)
     const unsub = onSnapshot(q, (snap) => {
       const rows: Assignment[] = []
@@ -182,7 +184,7 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       setAssignments(rows)
     })
     return () => unsub()
-  }, [user, db])
+  }, [user])
 
   async function buildAssignment(event: React.FormEvent) {
     event.preventDefault()
@@ -196,11 +198,12 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
       return
     }
 
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       setStatusMessage('Workspace storage is offline. Try again once Firestore is configured.')
       return
     }
+    const database = getFirestore(app)
 
     const subjectLabel = subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId
     const standard = availableStandards.find((entry) => entry.code === standardCode)
@@ -257,22 +260,24 @@ export default function AssignmentsPage({ user }: AssignmentsPageProps) {
 
   async function updateStatus(id: string, status: Assignment['status']) {
     if (!user) return
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       setStatusMessage('Workspace storage is offline. Status changes are paused.')
       return
     }
+    const database = getFirestore(app)
     await updateDoc(doc(database, `users/${user.uid}/assignments/${id}`), { status })
     setStatusMessage('Status updated.')
   }
 
   async function removeAssignment(id: string) {
     if (!user) return
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       setStatusMessage('Workspace storage is offline. Deletions are paused.')
       return
     }
+    const database = getFirestore(app)
     await deleteDoc(doc(database, `users/${user.uid}/assignments/${id}`))
     setStatusMessage('Assignment deleted.')
   }

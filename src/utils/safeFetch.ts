@@ -1,4 +1,4 @@
-import { auth } from '../firebase'
+import { ensureFirebase } from '../firebase'
 import {
   API_PREFIX,
   NETLIFY_PREFIX,
@@ -171,6 +171,7 @@ function shouldRetryNetworkError(
 
 export async function safeFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const { targets, treatAsFunctionRequest } = createRequestTargets(path)
+  const { auth } = ensureFirebase()
   const user = auth?.currentUser ?? null
   const unauthorizedStatuses = new Set([401, 403, 440])
   const maxAttempts = user ? 2 : 1

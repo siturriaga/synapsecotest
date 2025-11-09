@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { auth } from '../firebase'
+import { ensureFirebase } from '../firebase'
 import { safeFetch } from '../utils/safeFetch'
 import { useRosterData } from '../hooks/useRosterData'
 import type { SavedRosterUpload } from '../types/roster'
@@ -124,6 +124,7 @@ export default function RosterUploadPage({ user }: RosterPageProps) {
         setError(null)
         setStatus('Publishing roster to your secure workspace…')
 
+        const { auth } = ensureFirebase()
         const token = await auth?.currentUser?.getIdToken()
         const form = new FormData()
         form.append('file', file)
