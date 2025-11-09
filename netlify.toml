@@ -1,3 +1,4 @@
+# netlify.toml
 [build]
   command = "npm run build"
   publish = "dist"
@@ -7,16 +8,23 @@
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]
 
+# API -> Netlify Functions
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
   force = true
 
+# SPA fallback for client routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Site-wide security headers
 [[headers]]
   for = "/*"
   [headers.values]
-  # CSP tightened but compatible with Firebase Auth + Gemini + Google fonts
-  # If you prefer strict domain, replace *.firebaseapp.com and *.web.app with YOUR_PROJECT.firebaseapp.com
+    # CSP compatible with Firebase Auth + Google Fonts + Gemini + Firestore/Storage
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://*.googleapis.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; img-src 'self' data: https:; frame-src https://accounts.google.com https://*.firebaseapp.com https://*.web.app; frame-ancestors 'none'; base-uri 'self'; object-src 'none';"
     Cross-Origin-Opener-Policy = "same-origin-allow-popups"
