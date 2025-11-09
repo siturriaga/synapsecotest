@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import { collection, doc, getFirestore, onSnapshot, orderBy, query } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
@@ -81,6 +81,8 @@ function average(values: number[]) {
 }
 
 export default function DashboardPage({ user, loading }: DashboardProps) {
+  const [joke, setJokeState] = useState<string>('')
+  void joke
   const [rawStats, setRawStats] = useState<StatCard[]>([])
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([])
   const [assessmentSummaries, setAssessmentSummaries] = useState<AssessmentSnapshot[]>([])
