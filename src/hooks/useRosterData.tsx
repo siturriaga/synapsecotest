@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDoc,
+  getFirestore,
   limit,
   onSnapshot,
   orderBy,
@@ -11,7 +12,7 @@ import {
   serverTimestamp,
   setDoc
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { ensureFirebase } from '../firebase'
 import type {
   AssessmentSnapshotRecord,
   PedagogicalGuidance,
@@ -97,8 +98,8 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return
     }
 
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Roster data will not sync until configuration is restored.')
       setLoading(false)
       setSyncStatus('error')
@@ -106,6 +107,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return
     }
 
+    const database = getFirestore(app)
     setLoading(true)
     let recordsLoaded = false
     let summariesLoaded = false
@@ -261,7 +263,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       unsubscribeStudents()
       unsubscribeUploads()
     }
-  }, [user, db])
+  }, [user])
 
   const groupResult = useMemo(() => buildGroupInsights(records, summaries[0] ?? null), [records, summaries])
   const groupInsights = groupResult.groups
@@ -326,8 +328,8 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return true
     }
 
-    const database = db
-    if (!database) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Skipping roster snapshot persistence.')
       setSyncStatus('error')
       setSyncError('Workspace storage is offline. Snapshots cannot be saved right now.')
@@ -335,6 +337,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
       return false
     }
 
+    const database = getFirestore(app)
     const snapshotRecords = records
     const snapshotSummaries = summaries
     const snapshotStudents = students
@@ -525,8 +528,7 @@ export function RosterDataProvider({ user, children }: RosterDataProviderProps) 
     students,
     uploads,
     groupInsights,
-    pedagogicalGuidance,
-    db
+    pedagogicalGuidance
   ])
 
   useEffect(() => {

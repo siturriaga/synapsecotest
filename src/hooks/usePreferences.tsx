@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { db } from '../firebase'
+import { doc, getFirestore, onSnapshot } from 'firebase/firestore'
+import { ensureFirebase } from '../firebase'
 
 export type TexturePreference = 'aurora' | 'orbs' | 'grid' | 'minimal'
 
@@ -175,14 +175,16 @@ export function PreferencesProvider({ user, children }: { user: User | null; chi
       return
     }
 
-    if (!db) {
+    const { app } = ensureFirebase()
+    if (!app) {
       console.warn('Firestore unavailable. Preferences updates are disabled until configuration is restored.')
       setPreferences({ ...DEFAULT_APP_PREFERENCES })
       setReady(true)
       return
     }
 
-    const ref = doc(db, `users/${user.uid}/preferences/app`)
+    const database = getFirestore(app)
+    const ref = doc(database, `users/${user.uid}/preferences/app`)
     const unsubscribe = onSnapshot(
       ref,
       (snapshot) => {
@@ -198,7 +200,7 @@ export function PreferencesProvider({ user, children }: { user: User | null; chi
     )
 
     return () => unsubscribe()
-  }, [user, db])
+  }, [user])
 
   useEffect(() => {
     applyTheme(preferences)
