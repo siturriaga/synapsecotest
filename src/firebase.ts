@@ -1,48 +1,29 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
-type FirebaseBundle = {
-  app: FirebaseApp | null;
-  auth: Auth | null;
-  googleProvider: GoogleAuthProvider | null;
-  missing: string[];
-};
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
 
-let _bundle: FirebaseBundle | null = null;
+export function getFirebase() {
+  if (!app) {
+    const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+    const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
+    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+    const appId = import.meta.env.VITE_FIREBASE_APP_ID;
+    const storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
 
-function collectConfig() {
-  const cfg = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, // NO "https://"
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  };
-  const missing = Object.entries(cfg).filter(([,v]) => !v).map(([k]) => k);
-  return { cfg, missing };
-}
-
-/** Lazy initializer. Never throws during import. */
-export function ensureFirebase(): FirebaseBundle {
-  if (_bundle) return _bundle;
-
-  const { cfg, missing } = collectConfig();
-
-  if (missing.length) {
-    console.error("Firebase config missing:", missing.join(", "));
-    _bundle = { app: null, auth: null, googleProvider: null, missing };
-    return _bundle;
+    if (!apiKey || !authDomain || !projectId || !appId) {
+      return { app:null, auth:null, db:null, storage:null, provider:null };
+    }
+    app = initializeApp({ apiKey, authDomain, projectId, appId, storageBucket });
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
   }
-
-  const app = getApps().length ? getApps()[0] : initializeApp(cfg);
-  const auth = getAuth(app);
-  const googleProvider = new GoogleAuthProvider();
-  _bundle = { app, auth, googleProvider, missing: [] };
-  return _bundle;
-}
-
-/** Convenience checker for UI. */
-export function firebaseIsConfigured(): boolean {
-  return ensureFirebase().missing.length === 0;
+  const provider = new GoogleAuthProvider();
+  return { app, auth, db, storage, provider };
 }

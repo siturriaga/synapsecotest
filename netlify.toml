@@ -7,14 +7,22 @@
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]
 
+# API rewrite
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
   force = true
 
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Hardened CSP + Google Fonts + Sign-In iframe
 [[headers]]
   for = "/*"
   [headers.values]
-  Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://*.googleapis.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://generativelanguage.googleapis.com; img-src 'self' data: https:; frame-src https://accounts.google.com https://YOUR_PROJECT.firebaseapp.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none';"
-  Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://*.googleapis.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://generativelanguage.googleapis.com; img-src 'self' data: https:; frame-src 'self' https://accounts.google.com https://apis.google.com https://*.firebaseapp.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none';"
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"

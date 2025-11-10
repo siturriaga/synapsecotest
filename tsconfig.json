@@ -1,15 +1,16 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "strict": true,
-    "isolatedModules": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
     "jsx": "react-jsx",
-    "baseUrl": "."
+    "noEmit": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] },
+    "types": ["vite/client"]
   },
-  "include": ["src", "netlify/functions", "data", "types"]
+  "include": ["src", "netlify/functions"]
 }
