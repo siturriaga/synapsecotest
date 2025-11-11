@@ -2,40 +2,35 @@ import React, { useEffect, useState } from "react";
 import "./DayCycleBackground.css";
 
 const frames = [
-  { name: "morning", src: "/assets/bg-morning.jpg" },
-  { name: "midday",  src: "/assets/bg-midday.jpg" },
-  { name: "sunset",  src: "/assets/bg-sunset.jpg" },
-  { name: "night",   src: "/assets/bg-night.jpg" },
+  { name: "morning", className: "frame-morning" },
+  { name: "midday", className: "frame-midday" },
+  { name: "sunset", className: "frame-sunset" },
+  { name: "night", className: "frame-night" }
 ];
 
-function getFrameIndexByHour(hour: number): number {
-  if (hour >= 6 && hour < 12) return 0;
-  if (hour >= 12 && hour < 17) return 1;
-  if (hour >= 17 && hour < 20) return 2;
+function frameIndexByHour(h: number) {
+  if (h >= 6 && h < 12) return 0;
+  if (h >= 12 && h < 17) return 1;
+  if (h >= 17 && h < 20) return 2;
   return 3;
 }
 
-export const DayCycleBackground: React.FC = () => {
-  const [currentIndex, setCurrentIndex] = useState(getFrameIndexByHour(new Date().getHours()));
-
+export default function DayCycleBackground() {
+  const [idx, setIdx] = useState(frameIndexByHour(new Date().getHours()));
   useEffect(() => {
-    const interval = setInterval(() => {
-      const hour = new Date().getHours();
-      setCurrentIndex(getFrameIndexByHour(hour));
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    const t = setInterval(() => setIdx(frameIndexByHour(new Date().getHours())), 5 * 60 * 1000);
+    return () => clearInterval(t);
   }, []);
-
   return (
     <div className="day-cycle-background">
-      {frames.map((frame, idx) => (
+      {frames.map((f, i) => (
         <div
-          key={frame.name}
-          className={`day-cycle-frame frame-${frame.name} ${idx === currentIndex ? "active" : ""}`}
-          style={{ backgroundImage: `url(${frame.src})` }}
+          key={f.name}
+          className={`day-cycle-frame ${f.className} ${i === idx ? "active" : ""}`.trim()}
+          aria-hidden="true"
         />
       ))}
       <div className="warm-bloom-overlay" />
     </div>
   );
-};
+}
