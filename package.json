@@ -1,47 +1,35 @@
 {
-  "name": "synapse-app",
-  "version": "1.0.0",
+  "name": "synapse-assignments",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=18.18"
-  },
   "scripts": {
-    "api:canary": "node scripts/api-canary.cjs",
-    "build": "vite build",
-    "build:tests": "tsc -p tsconfig.test.json",
-    "check:env": "node scripts/check-env.cjs",
-    "check:paths": "node scripts/check-paths.cjs",
-    "check:routes": "node scripts/check-routes.cjs",
-    "contract:check": "node scripts/contract-check.cjs",
     "dev": "vite",
-    "diagnostics": "npm run build && npm run contract:check && npm run api:canary && npm run scan:secrets && npm test && node scripts/bundle-report.cjs && node scripts/verify-routing.cjs",
+    "build": "vite build",
     "preview": "vite preview",
-    "scan:secrets": "node scripts/secrets-scan.cjs",
-    "simulate:ai": "node scripts/simulate-ai.cjs",
-    "start": "vite preview",
-    "test": "node --test tests/**/*.test.mjs"
+    "check:env": "tsx scripts/checkEnv.ts",
+    "simulate:ai": "tsx scripts/simulateAi.ts",
+    "check:routes": "tsx scripts/checkRoutes.ts"
   },
   "dependencies": {
-    "busboy": "^1.6.0",
-    "exceljs": "^4.4.0",
-    "firebase": "^11.6.1",
-    "firebase-admin": "^12.6.0",
-    "mammoth": "^1.6.0",
-    "pdf-parse": "^1.1.1",
+    "@google/generative-ai": "^0.11.0",
+    "cookie": "^0.6.0",
+    "cross-fetch": "^4.0.0",
+    "firebase": "^10.12.2",
+    "firebase-admin": "^12.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "wouter": "^3.2.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.157",
-    "@types/busboy": "^1.5.4",
-    "@types/node": "^24.9.2",
-    "@types/pdf-parse": "^1.1.5",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.6.3",
-    "vite": "^7.1.12"
+    "@types/cookie": "^0.6.0",
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.2.46",
+    "@types/react-dom": "^18.2.18",
+    "@netlify/functions": "^2.0.2",
+    "@vitejs/plugin-react": "^4.2.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.8"
   }
 }
