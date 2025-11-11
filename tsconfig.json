@@ -1,15 +1,24 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "isolatedModules": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
+    "allowJs": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
     "jsx": "react-jsx",
-    "baseUrl": "."
+    "types": ["vite/client"]
   },
-  "include": ["src", "netlify/functions", "data", "types"]
+  "include": ["src", "scripts", "netlify/functions", "data"],
+  "references": [
+    { "path": "./tsconfig.node.json" }
+  ]
 }
