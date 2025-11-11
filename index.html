@@ -1,176 +1,752 @@
-            <button id="generate-button"
-                class="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg" disabled>
-                Initializing Secure Session...
-            </button>
-        </div>
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-        <div id="section-data" class="card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500 hidden">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-6">Pedagogical Data Analyzer</h2>
+// --- Global Environment Variable Access (Simulated for Canvas/Codespace) ---
+const getEnvVar = (name) => {
+    return typeof window !== 'undefined' && window[name];
+};
 
-            <div class="space-y-4">
-                <p class="text-sm text-gray-600">Analyze performance by selecting a standard and pasting raw test data below (e.g., student ID, score, common errors, etc., from CSV/Excel). Data will be analyzed against the selected standard to provide insights.</p>
+const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+const API_KEY = ""; // Assumed to be injected by runtime environment
 
-                <div>
-                    <label for="raw-data-input" class="block text-sm font-semibold text-indigo-700 mb-1">Raw Performance Data (Paste CSV/Excel Data Here)</label>
-                    <textarea id="raw-data-input" rows="8" placeholder="Paste data here. Format: Student ID, Student Name, Score, Errors/Variations..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700"></textarea>
-                </div>
-            </div>
+// --- STANDARDS IMPORT: Hardcoded data for initial load and stability ---
+const initialStandardsImport = {
+    "Civics": [
+        {"code": "SS.7.CG.1.1", "desc": "Ancient Influences on Republic", "full_text": "Standard: Analyze the influences of ancient Greece, ancient Rome and the Judeo-Christian tradition on America's constitutional republic. Clarifications: Students will explain the influence of ancient Greece (e.g., civic participation, legislative bodies, voting rights, written constitution); ancient Rome (e.g., republicanism, rule of law, separation of powers); and Judeo-Christian ethics (justice, individual worth)."},
+        {"code": "SS.7.CG.1.10", "desc": "Federalists vs. Anti-Federalists", "full_text": "Compare the viewpoints of the Federalists and the Anti-Federalists regarding ratification of the U.S. Constitution and including a bill of rights. Clarifications: Identify arguments for a strong central government (Federalists) vs. demand for a Bill of Rights (Anti-Federalists)."},
+        {"code": "SS.7.CG.1.11", "desc": "Define Rule of Law", "full_text": "Define the rule of law and recognize its influence on the development of legal, political and governmental systems in the United States. Clarifications: Contrast characteristics of a society with the rule of law vs. one without. Assess importance of due process."},
+    ],
+    "USHistory": [
+        {"code": "SS.68.AA.1.1", "desc": "Afro-Eurasian trade pre-Atlantic slave trade", "full_text": "Identify Afro-Eurasian trade routes and methods prior to the development of the Atlantic slave trade. Instruction includes how slavery was utilized in Asian, European and African cultures and the similarities and differences between serfdom and slavery."},
+        {"code": "SS.68.AA.1.3", "desc": "Indentured Servitude Evolution", "full_text": "Examine the evolution of the labor force in the use of indentured servitude contracts. Instruction includes the comparative treatment of indentured servants of European and African extraction and the transition from an indentured to a slave-based economy."}
+    ],
+    "ELA": [
+        {"code": "ELA.7.R.1.3", "desc": "Explain influence of narrator/POV", "full_text": "Explain the influence of narrator(s), including unreliable narrator(s), and/or shifts in point of view in a literary text. Clarifications: Unreliable narrator lacks credibility; shifts in point of view change perspective for effect."},
+        {"code": "ELA.6.C.1.3", "desc": "Write and support a claim", "full_text": "Write and support a claim using logical reasoning, relevant evidence from multiple sources, elaboration, and a logical organizational structure with varied transitions."}
+    ],
+    "Math": [
+        {"code": "MA.7.AR.3.4", "desc": "Solving Equations/Inequalities", "full_text": "Write and solve linear two-step equations and inequalities in one variable."},
+        {"code": "MA.6.GR.1.1", "desc": "Area of Polygons", "full_text": "Find the area of polygons by decomposing them into triangles and rectangles."}
+    ],
+    "WorldHistory": [
+        {"code": "SS.6.W.2.1", "desc": "Ancient River Civilizations", "full_text": "Describe the main characteristics and beliefs of major river valley civilizations (Mesopotamia, Egypt, Indus, China)."}
+    ]
+};
 
-            <button id="analyze-button"
-                class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg" disabled>
-                Analyze Data & Generate Report
-            </button>
+// --- Firebase and Gemini Utilities ---
 
-            <div id="analysis-output" class="mt-8 space-y-6 hidden">
-                <h3 class="text-xl font-semibold text-gray-800 border-b pb-2">Analysis Results</h3>
+const fetchWithRetries = async (url, options, maxRetries = 5) => {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`HTTP error! Status: ${response.status}. Body: ${errorBody.substring(0, 100)}...`);
+            }
+            return response;
+        } catch (error) {
+            if (i === maxRetries - 1) {
+                throw new Error(`API failed after ${maxRetries} attempts: ${error.message}`);
+            }
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
 
-                <div id="mastery-dashboard" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    </div>
+const getFullStandardText = (standardCode, subject, loadedStandardsData) => {
+    const standards = loadedStandardsData[subject];
+    if (standards) {
+        const standard = standards.find(s => s.code === standardCode);
+        if (standard) {
+            let fullText = standard.name;
+            if (standard.full_text) return standard.full_text;
+            // Fallback concatenation if full_text isn't in the object
+            if (standard.internal?.clarifications) fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
+            if (standard.internal?.objectives) fullText += " | OBJECTIVES: " + standard.internal.objectives.join('; ');
+            return fullText;
+        }
+    }
+    return `Standard text not found for ${standardCode}. Generating based on code only.`;
+};
 
-                <div id="ai-insights" class="space-y-6">
-                    </div>
-            </div>
-        </div>
 
-        <div id="output-card" class="card bg-white p-6 rounded-xl border-t-4 border-indigo-500 hidden">
+// --- JSON Schemas (Content Generation) ---
 
-            <div id="loading-indicator" class="flex justify-center items-center py-10 hidden">
-                <div class="spinner mr-3"></div>
-                <p class="text-lg text-indigo-600">Generating content... please wait. (This requires two API calls.)</p>
-            </div>
+const quizSchema = (count) => ({ type: "OBJECT", properties: { quizTitle: { type: "STRING" }, level: { type: "STRING" }, questions: { type: "ARRAY", description: `Array of exactly ${count} multiple-choice questions.`, items: { type: "OBJECT", properties: { questionText: { type: "STRING" }, options: { type: "OBJECT", properties: { A: { type: "STRING" }, B: { type: "STRING" }, C: { type: "STRING" }, D: { type: "STRING" } }, required: ["A", "B", "C", "D"] }, correctAnswer: { type: "STRING" } }, required: ["questionText", "options", "correctAnswer"] } } }, required: ["quizTitle", "level", "questions"] });
+const conceptMapSchema = (count) => ({ type: "OBJECT", properties: { title: { type: "STRING" }, level: { type: "STRING" }, concepts: { type: "ARRAY", description: `Array of exactly ${count} core concepts and their differentiated definitions.`, items: { type: "OBJECT", properties: { concept: { type: "STRING" }, definition: { type: "STRING" }, }, required: ["concept", "definition"] } } }, required: ["title", "level", "concepts"] });
+const tdqSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: { type: "STRING" }, level: { type: "STRING" }, story: { type: "STRING", description: "The full story/informational text generated for the TDQs." }, questions: { type: "ARRAY", description: `Array of exactly ${count} Text-Dependent Questions (TDQs).`, items: { type: "OBJECT", properties: { question: { type: "STRING" }, complexity: { type: "STRING", description: "DOK Level (1, 2, 3, or 4)." }, }, required: ["question", "complexity"] } } }, required: ["assignmentTitle", "level", "story", "questions"] });
+const mixedSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: { type: "STRING" }, level: { type: "STRING" }, mcqs: { type: "ARRAY", description: `Array of exactly ${Math.floor(count / 2)} Multiple Choice Questions.`, items: { type: "OBJECT", properties: { questionText: { type: "STRING" }, options: { type: "OBJECT", properties: { A: { type: "STRING" }, B: { type: "STRING" }, C: { type: "STRING" }, D: { type: "STRING" } }, required: ["A", "B", "C", "D"] }, correctAnswer: { type: "STRING" } }, required: ["questionText", "options", "correctAnswer"] } }, longerQuestions: { type: "ARRAY", description: `Array of exactly ${Math.ceil(count / 2)} short answer/open-ended questions.`, items: { type: "OBJECT", properties: { prompt: { type: "STRING" }, requiredLength: { type: "STRING", description: "e.g., 2-3 sentences or 1 paragraph." } }, required: ["prompt", "requiredLength"] } } }, required: ["assignmentTitle", "level", "mcqs", "longerQuestions"] });
 
-            <div id="story-content" class="mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-3 border-b pb-2">The Friendly Nag (Story & Context)</h2>
-                </div>
+// JSON Schema for Data Analysis (Mastery Bands and Insights)
+const analysisSchema = {
+    type: "OBJECT",
+    properties: {
+        masteryBand: {
+            type: "OBJECT",
+            description: "Overall class performance band.",
+            properties: {
+                band: { type: "STRING", enum: ["High Mastery", "Proficient", "Developing", "Needs Remediation"] },
+                score: { type: "STRING", description: "Approximate class average score (e.g., 78%)." },
+                summary: { type: "STRING", description: "One sentence summary of the status." }
+            },
+            required: ["band", "score", "summary"]
+        },
+        generalInsights: {
+            type: "STRING",
+            description: "General, high-level pedagogical findings for the class (1-2 paragraphs)."
+        },
+        classFindings: {
+            type: "STRING",
+            description: "Specific common errors, fuzzy concepts, or variations in student answers (1-2 paragraphs). Inject N/A if specific data is missing."
+        },
+        pedagogicalRecommendations: {
+            type: "STRING",
+            description: "Actionable, multi-step teaching strategies for remediation, customized to the found deficits (1-2 paragraphs)."
+        },
+        individualFlags: {
+            type: "STRING",
+            description: "Identifies 1-2 specific students (by name/ID if available) who need immediate intervention, based on lowest scores or unique error patterns. Inject N/A if specific student data is missing."
+        }
+    },
+    required: ["masteryBand", "generalInsights", "classFindings", "pedagogicalRecommendations", "individualFlags"]
+};
 
-            <div id="assignment-output">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-3 border-b pb-2">Assignment Output</h2>
-                <div id="assignment-content" class="assignment-output space-y-6">
-                    </div>
-            </div>
 
-            <div id="error-message" class="text-red-600 font-medium mt-6 hidden"></div>
-        </div>
-    </div>
+// --- MAIN REACT COMPONENT ---
 
-    <div id="initialization-status" class="fixed top-0 left-0 m-4 p-2 bg-indigo-500 text-white text-xs rounded shadow-lg">Initializing...</div>
+const App = () => {
+    // --- State for Inputs and App Status ---
+    const [activeTab, setActiveTab] = useState('content');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [status, setStatus] = useState('Initializing Secure Session...');
+    const [outputs, setOutputs] = useState(null);
+    const [isOutputVisible, setIsOutputVisible] = useState(false);
 
-    <script>
-        // --- CRITICAL FIX: All initialization is wrapped in DOMContentLoaded listener ---
-        window.addEventListener('DOMContentLoaded', () => {
+    // --- State for User Inputs ---
+    const [inputs, setInputs] = useState({
+        subject: 'Civics',
+        grade: '7th Grade',
+        standardCode: '',
+        format: 'MCQ',
+        level: 'On-Level',
+        count: 10,
+        rawData: ''
+    });
 
-            // --- API Configuration ---
-            const API_KEY = ""; // Placeholder for injection from the environment
-            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
-            let loadedStandardsData = {}; // Stores standards loaded from Firestore
-            let appId = 'default-app-id'; 
+    // --- State for Firebase/Data ---
+    const [standardsData, setStandardsData] = useState(initialStandardsImport);
+    const [authData, setAuthData] = useState({ db: null, userId: null, appId: 'default-app-id' });
+    const firebaseReady = !!authData.db;
+
+
+    // --- Side Effects & Initialization (useEffect) ---
+
+    useEffect(() => {
+        const initializeFirebase = async () => {
+            try {
+                const config = getEnvVar('__firebase_config');
+                const token = getEnvVar('__initial_auth_token');
+                const appId = getEnvVar('__app_id') || 'default-app-id';
+
+                if (!config) {
+                    throw new Error("Missing secure configuration (Firebase globals).");
+                }
+
+                const firebaseConfig = JSON.parse(config);
+                const app = initializeApp(firebaseConfig);
+                const dbInstance = getFirestore(app);
+                const authInstance = getAuth(app);
+
+                setStatus("Authenticating...");
+
+                if (token) {
+                    await signInWithCustomToken(authInstance, token);
+                } else {
+                    await signInAnonymously(authInstance);
+                }
+                const currentUserId = authInstance.currentUser?.uid || 'anonymous-user';
+
+                setAuthData({ db: dbInstance, userId: currentUserId, appId });
+                setStatus("Session Active");
+                
+                // 1. Setup Standards Listener
+                const standardsRef = doc(dbInstance, `artifacts/${appId}/users/${currentUserId}/standards/current`);
+
+                onSnapshot(standardsRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().data) {
+                        setStandardsData(JSON.parse(docSnap.data().data));
+                        setStatus("Session Active: Custom standards loaded.");
+                    } else {
+                        // Fallback to initial embedded data if Firestore is empty
+                        setStandardsData(initialStandardsImport); 
+                        setStatus("Session Active: Using embedded standards.");
+                    }
+                });
+
+            } catch (e) {
+                console.error("SECURE INITIALIZATION FAILED:", e);
+                setStatus("ERROR: Secure Session Failed.");
+            }
+        };
+
+        initializeFirebase();
+    }, []);
+
+    const handleInputChange = (e) => {
+        setInputs({ ...inputs, [e.target.name]: e.target.value });
+        setError(null);
+    };
+
+    // --- Dynamic Dropdown Population ---
+    useEffect(() => {
+        // Update standard code dropdown whenever subject or standardsData changes
+        const currentStandards = standardsData[inputs.subject] || [];
+        if (currentStandards.length > 0) {
+            setInputs(prev => ({ ...prev, standardCode: currentStandards[0].code }));
+        } else {
+            setInputs(prev => ({ ...prev, standardCode: '' }));
+        }
+    }, [inputs.subject, standardsData]);
+
+
+    // --- Firebase Save Logic ---
+
+    const saveStandardsToFirestore = async (jsonData) => {
+        if (!firebaseReady) return;
+        const { db, appId, userId } = authData;
+
+        try {
+            const standardsRef = doc(db, `artifacts/${appId}/users/${userId}/standards/current`);
+            await setDoc(standardsRef, {
+                data: JSON.stringify(jsonData),
+                timestamp: new Date().toISOString()
+            });
+            setStatus("Session Active: Custom standards loaded and saved.");
+        } catch (e) {
+            console.error("Error saving standards:", e);
+            setError("Error saving file to Firestore. Check console.");
+        }
+    };
+
+    const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file || !firebaseReady) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const jsonData = JSON.parse(event.target.result);
+                if (typeof jsonData !== 'object' || Array.isArray(jsonData)) {
+                    throw new Error("Invalid JSON structure. Must be an object of subjects.");
+                }
+                saveStandardsToFirestore(jsonData);
+            } catch (error) {
+                setError(`File Error: ${error.message}`);
+            }
+        };
+        reader.readAsText(file);
+    };
+
+
+    // --- Content Generation Logic (API Call Prompts) ---
+    
+    const getStoryPrompt = useCallback((standardCode, level, gradeLevel, fullStandardText) => {
+        let storyRules = "Generate a story (2-3 paragraphs) that explains the core concept of the standard.";
+        let storyStyle = `You must write for a **${gradeLevel}** student. Use a nagging, yet supportive, tutor persona to transmit the information. Be culturally responsible.`;
+
+        if (level === 'ELL') {
+            storyRules = "Generate a story that explains the core concept of the standard. The narrative must be exactly 2-3 **very short, simple sentences** per paragraph, using the simplest vocabulary possible. Immediately after the story, provide a single sentence describing a simple picture or visual aid that the teacher should use to teach this concept (e.g., 'Visual Aid Suggestion: Picture of two kids sharing a cookie.').";
+            storyStyle = `Use a supportive, encouraging tone. Use minimal to no complex English suitable for a **${gradeLevel}** ELL student. Bold key vocabulary words.`;
+        }
+
+        return {
+            system: `You are a pedagogical expert and tutor. Follow these instructions precisely. The content must be 100% aligned to this standard's text: [${fullStandardText}]. You may use creative scenarios and examples if they benefit student academic understanding. ${storyStyle}`,
+            user: `Based on the FL Standard ${standardCode}: ${storyRules}`
+        };
+    }, []);
+
+    const getAssignmentInstructions = useCallback((standardCode, format, level, count, gradeLevel, fullStandardText) => {
+        let assignmentType = "";
+        let difficulty = "";
+        const gradeInstruction = `The content must be appropriate for a **${gradeLevel}** student.`;
+
+        switch (level) {
+            case 'Advanced': difficulty = "Generate questions/items at Depth of Knowledge (DOK) level 3 or 4, requiring synthesis, analysis, and evaluation. Use complex, academic vocabulary."; break;
+            case 'Developing': difficulty = "Generate questions/items at Depth of Knowledge (DOK) level 1 or 2, focusing on recall, application, and basic understanding. Provide generous contextual clues."; break;
+            case 'ELL': difficulty = "Generate questions/items using the absolute simplest grammar and vocabulary. Questions must be brief, short, and highly chunked. The focus is on basic identification."; break;
+            case 'On-Level':
+            default: difficulty = `Generate questions/items appropriate for a typical ${gradeLevel} student, balanced across DOK levels 2 and 3.`;
+        }
+
+        switch (format) {
+            case 'MCQ': assignmentType = `Generate a Multiple Choice Quiz with exactly ${count} questions. Each question must have four options (A, B, C, D) and a single correct answer.`; break;
+            case 'ConceptMap': assignmentType = `Generate a list of exactly ${count} core concepts related to the standard. For each concept, provide a concise, differentiated definition (the 'Map' structure). No quiz questions.`; break;
+            case 'TDQs': assignmentType = `Generate exactly ${count} Text-Dependent Questions (TDQs) based on the story/text. The TDQs MUST mirror the style of the FL FAST Reading Test, including multi-part questions or questions requiring evidence.`; break;
+            case 'Mixed':
+                const halfCount = Math.floor(count / 2);
+                assignmentType = `Generate a Mixed Assignment. It must contain ${halfCount} Multiple Choice Questions (A-D, single correct answer) AND ${Math.ceil(count / 2)} longer Short Answer/Open-Ended Questions.`;
+                break;
+        }
+
+        return {
+            system: `You are a pedagogical expert specializing in Florida B.E.S.T. Standards. ${gradeInstruction} The content must be 100% aligned to this standard's text: [${fullStandardText}]. You may use creative scenarios and examples if they benefit student academic understanding. Generate ${format} content based on the standard ${standardCode}. You MUST follow the JSON schema. Be culturally responsible. Differentiation: ${difficulty}`,
+            user: `FL Standard: ${standardCode}. Task: ${assignmentType}`
+        };
+    }, []);
+
+    const handleGenerateContent = async () => {
+        const { subject, standardCode, format, level, count, grade } = inputs;
+        setError(null);
+        setLoading(true);
+        setIsOutputVisible(true);
+        setOutputs(null);
+
+        if (!standardCode) {
+            setError('Please select a standard code.');
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const fullStandardText = getFullStandardText(standardCode, subject, standardsData);
             
-            // --- STANDARDS IMPORT: Hardcoded data for initial load and stability ---
-            // NOTE: This data is used immediately to populate the dropdowns.
-            const initialStandardsImport = {
-                "Civics": [
-                    {"code": "SS.7.CG.1.1", "desc": "Ancient Influences on Republic", "full_text": "Standard: Analyze the influences of ancient Greece, ancient Rome and the Judeo-Christian tradition on America's constitutional republic. Clarifications: Students will explain the influence of ancient Greece (e.g., civic participation, legislative bodies, voting rights, written constitution); ancient Rome (e.g., republicanism, rule of law, separation of powers); and Judeo-Christian ethics (justice, individual worth)."},
-                    {"code": "SS.7.CG.1.10", "desc": "Federalists vs. Anti-Federalists", "full_text": "Compare the viewpoints of the Federalists and the Anti-Federalists regarding ratification of the U.S. Constitution and including a bill of rights. Clarifications: Identify arguments for a strong central government (Federalists) vs. demand for a Bill of Rights (Anti-Federalists)."},
-                    {"code": "SS.7.CG.1.11", "desc": "Define Rule of Law", "full_text": "Define the rule of law and recognize its influence on the development of legal, political and governmental systems in the United States. Clarifications: Contrast characteristics of a society with the rule of law vs. one without. Assess importance of due process."},
-                    {"code": "SS.7.CG.1.9", "desc": "Separation of Powers/Checks", "full_text": "Describe how the U.S. Constitution limits the powers of government through separation of powers, checks and balances, individual rights, rule of law and due process of law. Clarifications: Distinguish between separation of powers (three distinct jobs) and checks and balances (each branch limits the others)."}
-                ],
-                "USHistory": [
-                    {"code": "SS.68.AA.1.1", "desc": "Afro-Eurasian trade pre-Atlantic slave trade", "full_text": "Identify Afro-Eurasian trade routes and methods prior to the development of the Atlantic slave trade. Instruction includes how slavery was utilized in Asian, European and African cultures and the similarities and differences between serfdom and slavery."},
-                    {"code": "SS.68.AA.1.3", "desc": "Indentured Servitude Evolution", "full_text": "Examine the evolution of the labor force in the use of indentured servitude contracts. Instruction includes the comparative treatment of indentured servants of European and African extraction and the transition from an indentured to a slave-based economy."}
-                ],
-                "ELA": [
-                    {"code": "ELA.7.R.1.3", "desc": "Explain influence of narrator/POV", "full_text": "Explain the influence of narrator(s), including unreliable narrator(s), and/or shifts in point of view in a literary text. Clarifications: Unreliable narrator lacks credibility; shifts in point of view change perspective for effect."},
-                    {"code": "ELA.6.C.1.3", "desc": "Write and support a claim", "full_text": "Write and support a claim using logical reasoning, relevant evidence from multiple sources, elaboration, and a logical organizational structure with varied transitions."}
-                ],
-                "Math": [
-                    {"code": "MA.7.AR.3.4", "desc": "Solving Equations/Inequalities", "full_text": "Write and solve linear two-step equations and inequalities in one variable."},
-                    {"code": "MA.6.GR.1.1", "desc": "Area of Polygons", "full_text": "Find the area of polygons by decomposing them into triangles and rectangles."}
-                ],
-                "WorldHistory": [
-                    {"code": "SS.6.W.2.1", "desc": "Ancient River Civilizations", "full_text": "Describe the main characteristics and beliefs of major river valley civilizations (Mesopotamia, Egypt, Indus, China)."},
-                    {"code": "SS.6.W.3.5", "desc": "European Middle Ages", "full_text": "Analyze the causes and effects of the feudal system and the role of the Catholic Church during the European Middle Ages."}
-                ]
+            // --- STEP 1: Generate Story/Context ---
+            const storyInstructions = getStoryPrompt(standardCode, level, grade, fullStandardText); 
+            let storyPayload = {
+                contents: [{ parts: [{ text: storyInstructions.user }] }],
+                systemInstruction: { parts: [{ text: storyInstructions.system }] }
             };
 
+            const storyResponse = await fetchWithRetries(API_URL + API_KEY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(storyPayload)
+            });
+            const storyResult = await storyResponse.json();
+            const storyText = storyResult.candidates?.[0]?.content?.parts?.[0]?.text || "Error: Could not generate narrative context.";
 
-            // --- DOM Elements ---
-            const appContainer = document.getElementById('app-container');
-            const subjectSelect = document.getElementById('subject-select');
-            const gradeSelect = document.getElementById('grade-select');
-            const standardSelect = document.getElementById('standard-select');
-            const formatSelect = document.getElementById('format-select');
-            const levelSelect = document.getElementById('level-select');
-            const countSelect = document.getElementById('question-count');
-            const generateButton = document.getElementById('generate-button');
-            const analyzeButton = document.getElementById('analyze-button');
-            const outputCard = document.getElementById('output-card');
-            const loadingIndicator = document.getElementById('loading-indicator');
-            const storyContent = document.getElementById('story-content');
-            const assignmentContent = document.getElementById('assignment-content');
-            const errorMessageElement = document.getElementById('error-message');
-            const standardsFile = document.getElementById('standards-file');
-            const fileStatus = document.getElementById('file-status');
-            const initStatus = document.getElementById('initialization-status');
+            // --- STEP 2: Generate Assignment (Structured JSON) ---
             
-            // Tab Elements
-            const tabContent = document.getElementById('tab-content');
-            const tabData = document.getElementById('tab-data');
-            const sectionContent = document.getElementById('section-content');
-            const sectionData = document.getElementById('section-data');
-            const rawDataInput = document.getElementById('raw-data-input');
-            const analysisOutput = document.getElementById('analysis-output');
-            const masteryDashboard = document.getElementById('mastery-dashboard');
-            const aiInsights = document.getElementById('ai-insights');
-
-
-            // --- Tab Switching Logic ---
-            function switchTab(target) {
-                if (target === 'content') {
-                    sectionContent.classList.remove('hidden');
-                    sectionData.classList.add('hidden');
-                    tabContent.classList.replace('bg-gray-100', 'bg-indigo-600');
-                    tabContent.classList.replace('text-gray-700', 'text-white');
-                    tabData.classList.replace('bg-indigo-600', 'bg-gray-100');
-                    tabData.classList.replace('text-white', 'text-gray-700');
-                } else {
-                    sectionContent.classList.add('hidden');
-                    sectionData.classList.remove('hidden');
-                    tabData.classList.replace('bg-gray-100', 'bg-indigo-600');
-                    tabData.classList.replace('text-gray-700', 'text-white');
-                    tabContent.classList.replace('bg-indigo-600', 'bg-gray-100');
-                    tabContent.classList.replace('text-white', 'text-gray-700');
+            const [assignmentInstructions, schemaFunc] = useMemo(() => {
+                const instructions = getAssignmentInstructions(standardCode, format, level, count, grade, fullStandardText);
+                let schema;
+                switch (format) {
+                    case 'MCQ': schema = quizSchema(count); break;
+                    case 'ConceptMap': schema = conceptMapSchema(count); break;
+                    case 'TDQs': schema = tdqSchema(count); break;
+                    case 'Mixed': schema = mixedSchema(count); break;
+                    default: throw new Error("Invalid format selected.");
                 }
-                outputCard.classList.add('hidden'); 
-                errorMessageElement.classList.add('hidden');
+                return [instructions, schema];
+            }, [standardCode, format, level, count, grade, fullStandardText]);
+            
+            const assignmentPayload = {
+                contents: [{ parts: [{ text: assignmentInstructions.user }] }],
+                systemInstruction: { parts: [{ text: assignmentInstructions.system }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: schemaFunc
+                }
+            };
+            
+            const assignmentResponse = await fetchWithRetries(API_URL + API_KEY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(assignmentPayload)
+            });
+            const assignmentResult = await assignmentResponse.json();
+            const jsonString = assignmentResult.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!jsonString) {
+                throw new Error("Model failed to return structured JSON for the assignment.");
             }
 
-            tabContent.addEventListener('click', () => switchTab('content'));
-            tabData.addEventListener('click', () => switchTab('data'));
+            const assignmentData = JSON.parse(jsonString);
+
+            setOutputs({
+                storyText,
+                assignmentData,
+                format,
+                level: inputs.level
+            });
+
+
+        } catch (e) {
+            console.error("Gemini API Error:", e);
+            setError(`Error generating content: ${e.message}. Ensure API key is correct and inputs are valid.`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+
+    // --- Data Analyzer Logic (API Call) ---
+
+    const handleAnalyzeData = async () => {
+        const { subject, standardCode, grade, rawData } = inputs;
+        setError(null);
+        setLoading(true);
+        setIsOutputVisible(true);
+        setOutputs(null);
+
+        if (!standardCode || !rawData) {
+            setError('Please select a standard code AND paste raw performance data.');
+            setLoading(false);
+            return;
+        }
+        
+        try {
+            const fullStandardText = getFullStandardText(standardCode, subject, standardsData);
+            const prompt = getAnalysisPrompt(standardCode, grade, fullStandardText, rawData);
             
+            const analysisPayload = {
+                contents: [{ parts: [{ text: prompt.user }] }],
+                systemInstruction: { parts: [{ text: prompt.system }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: analysisSchema
+                }
+            };
 
-            // --- Firebase Setup (Mandatory and Secure) ---
-            let db, auth, userId;
-            let firebaseReady = false;
+            const response = await fetchWithRetries(API_URL + API_KEY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(analysisPayload)
+            });
 
-            async function initializeFirebase() {
-                try {
-                    const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                    const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                    const envAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                    appId = envAppId; 
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-                    if (!window.firebaseExports || !config) {
-                        throw new Error("Missing secure configuration (Firebase globals). Deployment required.");
-                    }
+            if (!jsonString) {
+                throw new Error("Model failed to return structured JSON for the analysis.");
+            }
 
-                    const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, getFirestore } = window.firebaseExports;
+            const analysisData = JSON.parse(jsonString);
+            setOutputs({ analysisData, format: 'Analysis' });
 
-                    const app = initializeApp(config);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
+        } catch (e) {
+            console.error("Gemini API Error (Analysis):", e);
+            setError(`Error during analysis: ${e.message}. Check network and data format.`);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-                    initStatus.textContent = "Authenticating...";
+    const getAnalysisPrompt = (standardCode, gradeLevel, fullStandardText, rawData) => ({
+        system: `You are a Master Pedagogical Data Analyst and Curriculum Consultant. Your task is to analyze the provided raw student performance data against the standard. Your output MUST strictly follow the JSON schema. Be flexible: if raw student names/IDs or specific error patterns are not found, use 'N/A' in the corresponding fields. Your ultimate goal is to provide concise, actionable remediation steps for the teacher. The standard's context is: [${fullStandardText}].`,
+        user: `Analyze the following raw performance data for the standard ${standardCode} (Grade ${gradeLevel}):\n\nRaw Data:\n${rawData}\n\nProvide the required mastery band, findings, and pedagogical recommendations.`
+    });
 
-                    if (token) {
-                        await signInWithCustomToken(auth, token);
-     
+
+    // --- RENDERING HELPERS (Moved outside of main render) ---
+
+    const renderAssignmentContent = (data, format, level) => {
+        // Implementation of renderAssignment (similar to previous version, adapted for React)
+        
+        if (format === 'Analysis') {
+            const { masteryBand, generalInsights, classFindings, pedagogicalRecommendations, individualFlags } = data;
+            const getCardClass = (band) => {
+                if (band === 'High Mastery') return 'bg-green-100 text-green-800 border-green-500';
+                if (band === 'Proficient') return 'bg-indigo-100 text-indigo-800 border-indigo-500';
+                if (band === 'Developing') return 'bg-yellow-100 text-yellow-800 border-yellow-500';
+                return 'bg-red-100 text-red-800 border-red-500';
+            };
+
+            return (
+                <div className="space-y-6">
+                    <h3 className="text-xl font-semibold text-gray-800">Analysis Results for {inputs.subject} ({inputs.grade})</h3>
+
+                    {/* Mastery Dashboard */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-xl bg-gray-50">
+                        <div className={`p-4 rounded-xl border-l-4 ${getCardClass(masteryBand.band)}`}>
+                            <p className="text-sm font-medium">Overall Class Mastery Band</p>
+                            <p className="text-3xl font-bold">{masteryBand.band}</p>
+                            <p className="mt-1">{masteryBand.summary}</p>
+                            <p className="text-xs mt-2">Avg. Score: {masteryBand.score}</p>
+                        </div>
+                        <div className="p-4 rounded-xl bg-white border-l-4 border-gray-400 md:col-span-2 shadow-sm">
+                            <p className="text-sm font-medium text-gray-700">Standard Analyzed</p>
+                            <p className="text-lg font-bold">{inputs.standardCode}</p>
+                            <p className="text-xs mt-1 text-gray-600">Generated from pasted raw data.</p>
+                        </div>
+                    </div>
+
+                    {/* AI Generated Insights */}
+                    <div className="space-y-4">
+                        {[
+                            { title: 'General Pedagogical Findings', content: generalInsights, color: 'gray' },
+                            { title: 'Specific Class Deficits (Fuzzy Concepts/Variations)', content: classFindings, color: 'gray' },
+                            { title: 'Actionable Remediation Recommendations', content: pedagogicalRecommendations, color: 'gray' },
+                            { title: 'Individual Intervention Flags', content: individualFlags, color: 'red' },
+                        ].map((insight, i) => (
+                            <div key={i} className="p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
+                                <h4 className={`text-lg font-bold mb-2 text-${insight.color}-800`}>{insight.title}</h4>
+                                <p className="text-gray-700 whitespace-pre-wrap">{insight.content}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Content Creation Rendering ---
+        
+        let assignmentHtml;
+
+        const renderQuestionItem = (q, index, isLonger) => {
+            const qIndex = index + 1;
+            let optionsHtml;
+            let footerHtml;
+
+            if (q.options) {
+                optionsHtml = ['A', 'B', 'C', 'D'].map(key => (
+                    <li key={key} className={`p-2 rounded-lg border border-gray-200 ${q.correctAnswer === key ? 'bg-green-50' : 'bg-white'}`}>
+                        <span className="font-bold mr-2 text-indigo-600">{key}.</span>
+                        {q.options[key]}
+                    </li>
+                ));
+                footerHtml = (
+                    <>
+                        <p className="mt-3 text-sm font-medium text-green-700">Correct Answer: {q.correctAnswer}</p>
+                    </>
+                );
+            } else if (q.requiredLength) {
+                footerHtml = <p className="text-sm text-gray-500 mt-1">Required Length: {q.requiredLength}</p>;
+            }
+
+            if (q.complexity) {
+                footerHtml = <>{footerHtml}<p className="text-sm text-gray-500 mt-1">Complexity: DOK {q.complexity}</p></>;
+            }
+
+            return (
+                <div key={index} className="p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <p className="text-lg font-semibold text-gray-800 mb-3">{isLonger ? 'Prompt' : 'Question'} {qIndex}: {q.questionText || q.prompt || q.question}</p>
+                    {optionsHtml && <ul className="space-y-1 text-gray-700 text-sm list-none mb-3">{optionsHtml}</ul>}
+                    {footerHtml}
+                </div>
+            );
+        };
+        
+        switch (format) {
+            case 'MCQ':
+                assignmentHtml = <div className="space-y-4">{data.questions.map((q, i) => renderQuestionItem(q, i, false))}</div>;
+                break;
+            case 'ConceptMap':
+                assignmentHtml = (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {data.concepts.map((c, i) => (
+                            <div key={i} className="p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                                <p className="text-lg font-bold text-indigo-700 mb-1">{i + 1}. {c.concept}</p>
+                                <p className="text-gray-700">{c.definition}</p>
+                            </div>
+                        ))}
+                    </div>
+                );
+                break;
+            case 'TDQs':
+                assignmentHtml = (
+                    <>
+                        <div className="p-4 bg-gray-50 rounded-xl mb-6 border border-gray-200">
+                            <h4 className="text-lg font-bold mb-2 text-gray-800">Source Text:</h4>
+                            <div className="text-gray-700 whitespace-pre-wrap">{data.story}</div>
+                        </div>
+                        <div className="space-y-4">{data.questions.map((q, i) => renderQuestionItem(q, i, false))}</div>
+                    </>
+                );
+                break;
+            case 'Mixed':
+                assignmentHtml = (
+                    <>
+                        <h4 className="text-xl font-bold mt-2 mb-4 text-gray-800">Multiple Choice Questions</h4>
+                        {data.mcqs && <div className="space-y-4">{data.mcqs.map((q, i) => renderQuestionItem(q, i, false))}</div>}
+
+                        <h4 className="text-xl font-bold mt-6 mb-4 text-gray-800">Short Answer/Extended Response</h4>
+                        {data.longerQuestions && <div className="space-y-4">{data.longerQuestions.map((q, i) => renderQuestionItem(q, i, true))}</div>}
+                    </>
+                );
+                break;
+            default:
+                assignmentHtml = <p className="text-red-500">Error: Unknown assignment format.</p>;
+        }
+
+        return (
+            <>
+                <div className="mb-6">
+                    <h3 className="text-xl font-semibold text-gray-800 mb-3 border-b pb-2">The Friendly Nag (Story & Context)</h3>
+                    <div className="p-4 rounded-lg bg-gray-50 text-gray-700 border border-gray-200">
+                        {outputs.storyText.split('\n\n').map((p, i) => <p key={i} className="mb-2">{p}</p>)}
+                        {level === 'ELL' && (
+                            <p className="mt-4 p-3 border-l-4 border-yellow-500 bg-yellow-50 text-yellow-800 text-sm">
+                                {outputs.storyText.match(/Visual Aid Suggestion:\s*(.*)/i)?.[0] || "Visual Aid Suggestion: N/A"}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-3 border-b pb-2">Assignment Output</h3>
+                    <div className="assignment-output space-y-6">
+                        {assignmentHtml}
+                    </div>
+                </div>
+            </>
+        );
+    };
+
+    // --- Main Render ---
+
+    const currentStandardsList = standardsData[inputs.subject] || [];
+
+    return (
+        <div className="p-4 sm:p-8 min-h-screen">
+            <div className="max-w-4xl mx-auto space-y-8">
+                <header className="text-center">
+                    <h1 className="text-4xl font-extrabold text-gray-900 mb-2">FL Standards Differentiation Tool</h1>
+                    <p className="text-gray-600">Generate level-differentiated assignments and data insights.</p>
+                </header>
+
+                {/* Tabbed Interface */}
+                <div className="flex border-b border-gray-200">
+                    <button onClick={() => setActiveTab('content')} className={`px-4 py-2 text-sm font-medium border-r border-gray-200 ${activeTab === 'content' ? 'text-white bg-indigo-600' : 'text-gray-700 bg-gray-100 hover:bg-gray-200'} rounded-tl-lg transition`}>Content Generator</button>
+                    <button onClick={() => setActiveTab('data')} className={`px-4 py-2 text-sm font-medium ${activeTab === 'data' ? 'text-white bg-indigo-600' : 'text-gray-700 bg-gray-100 hover:bg-gray-200'} rounded-tr-lg transition`}>Data Analyzer</button>
+                </div>
+
+                {/* Initialization Status */}
+                <div className={`p-2 text-xs font-semibold rounded-lg text-center ${status.includes('ERROR') ? 'bg-red-200 text-red-800' : 'bg-indigo-100 text-indigo-700'}`}>
+                    Status: {status}
+                </div>
+
+                {/* Tab Content 1: Content Generator */}
+                <div className={`card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500 ${activeTab === 'content' ? '' : 'hidden'}`}>
+                    <h2 className="text-2xl font-semibold text-gray-800 mb-6">Assignment Creation Parameters</h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {/* File Upload Status */}
+                        <div className="lg:col-span-3">
+                            <label htmlFor="standards-file" className="block text-sm font-semibold text-indigo-700 mb-1">1. Standards File (JSON Upload)</label>
+                            <input type="file" id="standards-file" accept=".json" onChange={handleFileUpload} className="w-full text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+                        </div>
+
+                        {/* 2. Subject Dropdown */}
+                        <div>
+                            <label htmlFor="subject-select" className="block text-sm font-semibold text-indigo-700 mb-1">2. Select Subject</label>
+                            <select name="subject" value={inputs.subject} onChange={handleInputChange} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                {Object.keys(initialStandardsImport).map(subj => (
+                                    <option key={subj} value={subj}>{subj}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* 3. Grade Level Dropdown */}
+                        <div>
+                            <label htmlFor="grade-select" className="block text-sm font-semibold text-indigo-700 mb-1">3. Select Grade Level</label>
+                            <select name="grade" value={inputs.grade} onChange={handleInputChange} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                <option value="6th Grade">6th Grade</option>
+                                <option value="7th Grade">7th Grade</option>
+                                <option value="8th Grade">8th Grade</option>
+                            </select>
+                        </div>
+
+                        {/* 4. Standard Code Dropdown */}
+                        <div>
+                            <label htmlFor="standard-select" className="block text-sm font-semibold text-indigo-700 mb-1">4. Select Standard Code</label>
+                            <select name="standardCode" value={inputs.standardCode} onChange={handleInputChange} disabled={currentStandardsList.length === 0} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                {currentStandardsList.length === 0 ? (
+                                    <option value="" disabled>No standards loaded for this subject</option>
+                                ) : (
+                                    currentStandardsList.map(std => (
+                                        <option key={std.code} value={std.code}>{std.code}: {std.desc ? std.desc.substring(0, 40) + '...' : std.name.substring(0, 40) + '...'}</option>
+                                    ))
+                                )}
+                            </select>
+                        </div>
+
+                        {/* 5. Assignment Format Dropdown */}
+                        <div>
+                            <label htmlFor="format-select" className="block text-sm font-semibold text-indigo-700 mb-1">5. Select Format</label>
+                            <select name="format" value={inputs.format} onChange={handleInputChange} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                <option value="MCQ">Multiple Choice Quiz (MCQ)</option>
+                                <option value="ConceptMap">Concept to Definition Map</option>
+                                <option value="TDQs">Short Story with TDQs (FAST Style)</option>
+                                <option value="Mixed">Mixed MCQ & Longer Questions</option>
+                            </select>
+                        </div>
+
+                        {/* 6. Differentiation Level Dropdown */}
+                        <div>
+                            <label htmlFor="level-select" className="block text-sm font-semibold text-indigo-700 mb-1">6. Select Differentiation Level</label>
+                            <select name="level" value={inputs.level} onChange={handleInputChange} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                <option value="On-Level">On-Level</option>
+                                <option value="Developing">Developing (DOK 1/2)</option>
+                                <option value="Advanced">Advanced (DOK 3/4)</option>
+                                <option value="ELL">ELL (Minimal Text/Visual Aids)</option>
+                            </select>
+                        </div>
+
+                        {/* 7. Item Count Dropdown */}
+                        <div>
+                            <label htmlFor="question-count" className="block text-sm font-semibold text-indigo-700 mb-1">7. Item Count</label>
+                            <select name="count" value={inputs.count} onChange={handleInputChange} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
+                                <option value={5}>5 Questions/Concepts</option>
+                                <option value={10}>10 Questions/Concepts</option>
+                                <option value={15}>15 Questions/Concepts</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Generate Button */}
+                    <button onClick={handleGenerateContent} disabled={loading || !firebaseReady || !inputs.standardCode} className="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg disabled:bg-indigo-300">
+                        {loading ? 'Generating Content...' : 'Generate Differentiated Content'}
+                    </button>
+                </div>
+
+                {/* Tab Content 2: Data Analyzer */}
+                <div className={`card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500 ${activeTab === 'data' ? '' : 'hidden'}`}>
+                    <h2 className="text-2xl font-semibold text-gray-800 mb-6">Pedagogical Data Analyzer</h2>
+
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600">Analyze performance against the selected standard by pasting raw test data below.</p>
+                        
+                        {/* Data Paste Area */}
+                        <div>
+                            <label htmlFor="raw-data-input" className="block text-sm font-semibold text-indigo-700 mb-1">Raw Performance Data (Paste CSV/Excel Data Here)</label>
+                            <textarea id="raw-data-input" name="rawData" value={inputs.rawData} onChange={handleInputChange} rows={8} placeholder="Example: Student ID, Score, Name, Errors...&#10;1001, 65%, Maria Sanchez, missed Q3 (Senate), confused executive role&#10;1002, 98%, Alex Jones, no errors&#10;1003, 40%, Sam Smith, missed Q1, Q2, Q4 (basic recall)" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700"></textarea>
+                        </div>
+                    </div>
+
+                    <button onClick={handleAnalyzeData} disabled={loading || !firebaseReady || !inputs.standardCode || !inputs.rawData.trim()} className="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg disabled:bg-green-300">
+                        {loading ? 'Analyzing Data...' : 'Analyze Data & Generate Report'}
+                    </button>
+                </div>
+
+
+                {/* Output Area (Shared) */}
+                <div className={`card bg-white p-6 rounded-xl border-t-4 border-indigo-500 ${isOutputVisible ? '' : 'hidden'}`}>
+                    
+                    {error && <div className="p-3 bg-red-100 text-red-800 rounded-lg mb-4 font-medium">{error}</div>}
+
+                    {loading ? (
+                        <div className="flex justify-center items-center py-10">
+                            <div className="spinner mr-3"></div>
+                            <p className="text-lg text-indigo-600">Generating content... please wait. (This requires two API calls.)</p>
+                        </div>
+                    ) : (
+                        outputs && (
+                            outputs.format === 'Analysis' ? (
+                                renderAssignmentContent(outputs.analysisData, 'Analysis')
+                            ) : (
+                                renderAssignmentContent(outputs.assignmentData, outputs.format, outputs.level)
+                            )
+                        )
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default App;
