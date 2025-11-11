@@ -1,328 +1,214 @@
-// src/pages/Assignments.tsx
-import { useEffect, useMemo, useState } from 'react'
-import type { User } from 'firebase/auth'
-import {
-  Timestamp,
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getFirestore,
-  onSnapshot,
-  updateDoc
-} from 'firebase/firestore'
-import catalog from '../../data/standards/catalog.json'
-import standardDetails from '../../data/standards/details.json'
+import React, { useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { useAuth } from '../components/AuthProvider';
+import { firestore } from '../utils/firebaseClient';
+import { safeFetch } from '../utils/safeFetch';
 
-type StandardDetails = {
-  clarifications?: string[]
-  objectives?: string[]
-}
-import { safeFetch } from '../utils/safeFetch'
-import { ensureFirebase } from '../firebase'
-import { useRosterData } from '../hooks/useRosterData'
-
-interface AssignmentsPageProps {
-  user: User | null
-}
-
-type Standard = {
-  code: string
-  name: string
-  clarifications?: string[]
-  objectives?: string[]
-}
-
-type Subject = {
-  id: string
-  label: string
-  grades: Record<string, { standards: Standard[] }>
-}
-
-type AssessmentQuestion = {
-  id: string
-  prompt: string
-  options?: string[]
-  answer: string
-  rationale: string
-}
-
-type AssessmentLevel = {
-  level: string
-  description: string
-  questions: AssessmentQuestion[]
-  remediation: string[]
-}
-
-type PedagogyFocus = {
-  summary: string
-  bestPractices: string[]
-  reflectionPrompts: string[]
-}
-
-type AssessmentBlueprint = {
-  standardCode: string
-  standardName: string
-  subject: string
-  grade: string
-  assessmentType: 'multiple_choice' | 'reading_plus' | 'matching'
-  questionCount: number
-  aiInsights: {
-    overview: string
-    classStrategies: string[]
-    nextSteps: string[]
-    pedagogy?: PedagogyFocus
-  }
-  levels: AssessmentLevel[]
-}
+type AssignmentItem = {
+  type: 'mcq' | 'short' | 'mixed';
+  stem: string;
+  options?: string[];
+  answerIndex?: number;
+};
 
 type Assignment = {
-  id: string
-  title: string
-  status: 'draft' | 'assigned' | 'completed'
-  dueDate?: string
-  blueprint?: AssessmentBlueprint
-  createdAt?: string | null
-  // persist a few top-level fields for filters
-  standardCode?: string | null
-  assessmentType?: string | null
-  questionCount?: number | null
-}
+  id?: string;
+  title: string;
+  standardCode: string;
+  items: AssignmentItem[];
+  gradeLevel: string;
+  createdAt: string;
+};
 
-const ASSESSMENT_TYPES = [
-  { value: 'multiple_choice', label: 'Multiple choice quiz' },
-  { value: 'reading_plus', label: 'Reading plus text-dependent questions' },
-  { value: 'matching', label: 'Matching definitions to concepts' }
-] as const
-
-export default function AssignmentsPage({ user }: AssignmentsPageProps) {
-  const subjects = useMemo(() => catalog.subjects as Subject[], [])
-  const [subjectId, setSubjectId] = useState('')
-  const [gradeLevel, setGradeLevel] = useState('')
-  const [standardCode, setStandardCode] = useState('')
-  const [availableStandards, setAvailableStandards] = useState<Standard[]>([])
-  const [assessmentType, setAssessmentType] = useState<(typeof ASSESSMENT_TYPES)[number]['value']>('multiple_choice')
-  const [questionCount, setQuestionCount] = useState(5)
-  const [title, setTitle] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [includeRemediation, setIncludeRemediation] = useState(true)
-  const [statusMessage, setStatusMessage] = useState<string>('')
-  const [loading, setLoading] = useState(false)
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const { aiContext } = useRosterData()
-
-  const gradeOptions = useMemo(() => {
-    if (!subjects.length) return [] as string[]
-    if (subjectId) {
-      const subject = subjects.find((entry) => entry.id === subjectId)
-      return Object.keys(subject?.grades ?? {}).sort((a, b) => Number(a) - Number(b))
-    }
-    const allGrades = new Set<string>()
-    subjects.forEach((subject) => {
-      Object.keys(subject.grades ?? {}).forEach((grade) => allGrades.add(grade))
-    })
-    return Array.from(allGrades).sort((a, b) => Number(a) - Number(b))
-  }, [subjectId, subjects])
+const Assignments: React.FC = () => {
+  const { user } = useAuth();
+  const [standards, setStandards] = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [formState, setFormState] = useState({
+    title: '',
+    gradeLevel: '',
+    questionCount: 5,
+    type: 'mixed'
+  });
+  const [selectedStandard, setSelectedStandard] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [generated, setGenerated] = useState<Assignment | null>(null);
 
   useEffect(() => {
-    if (!subjectId || !gradeLevel) {
-      setAvailableStandards([])
-      setStandardCode('')
-      return
-    }
-    const subject = subjects.find((entry) => entry.id === subjectId)
-    if (!subject?.grades?.[gradeLevel]) {
-      setAvailableStandards([])
-      setStandardCode('')
-      setGradeLevel('')
-      return
-    }
-    const standards = subject.grades[gradeLevel]?.standards ?? []
-    const enriched = standards.map((entry) => {
-      const detailsForStandard = (standardDetails as Record<string, StandardDetails>)[entry.code] ?? {}
-      return {
-        ...entry,
-        clarifications: Array.isArray(detailsForStandard.clarifications) ? detailsForStandard.clarifications : [],
-        objectives: Array.isArray(detailsForStandard.objectives) ? detailsForStandard.objectives : []
+    if (!user) return;
+    const standardsRef = doc(firestore, 'users', user.uid, 'settings', 'standards');
+    getDoc(standardsRef).then((snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data.codes)) {
+          setStandards(data.codes as string[]);
+          setSelectedStandard((data.codes as string[])[0] ?? '');
+        }
       }
-    })
-    setAvailableStandards(enriched)
-    if (!standards.some((entry) => entry.code === standardCode)) {
-      setStandardCode(standards[0]?.code ?? '')
-    }
-  }, [subjectId, gradeLevel, subjects, standardCode])
+    });
+  }, [user]);
 
   useEffect(() => {
-    if (!user) {
-      setAssignments([])
-      return
-    }
-    const { app } = ensureFirebase()
-    if (!app) {
-      setStatusMessage('Workspace storage is offline. Assignments will load when Firestore is configured.')
-      setAssignments([])
-      return
-    }
-    const database = getFirestore(app)
-    const q = collection(database, `users/${user.uid}/assignments`)
-    const unsub = onSnapshot(q, (snap) => {
-      const rows: Assignment[] = []
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as any
-        rows.push({
-          id: docSnap.id,
-          title: data.title ?? 'AI assignment',
-          status: (data.status as Assignment['status']) ?? 'draft',
-          dueDate: data.dueDate ?? undefined,
-          blueprint: data.blueprint ?? undefined,
-          createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
-          standardCode: data.standardCode ?? null,
-          assessmentType: data.assessmentType ?? null,
-          questionCount: data.questionCount ?? null
-        })
-      })
-      setAssignments(rows)
-    })
-    return () => unsub()
-  }, [user])
+    if (!user) return;
+    const assignmentsRef = collection(firestore, 'users', user.uid, 'assignments');
+    const q = query(assignmentsRef, orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs: Assignment[] = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Assignment) }));
+      setAssignments(docs);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
-  async function buildAssignment(event: React.FormEvent) {
-    event.preventDefault()
-    if (!user) return
-    if (!subjectId || !gradeLevel || !standardCode) {
-      setStatusMessage('Complete the subject, grade, and standard selections.')
-      return
-    }
-    if (!title.trim()) {
-      setStatusMessage('Provide a title so the assignment is easy to find later.')
-      return
-    }
+  if (!user) {
+    return null;
+  }
 
-    const { app, auth } = ensureFirebase()
-    if (!app || !auth?.currentUser) {
-      setStatusMessage('Workspace storage or auth is offline. Try again once Firebase is configured.')
-      return
+  const handleGenerate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus(null);
+    setError(null);
+    if (!selectedStandard) {
+      setError('Select at least one standard before generating.');
+      return;
     }
-    const database = getFirestore(app)
-    const token = await auth.currentUser.getIdToken()
-
-    const subjectLabel = subjects.find((entry) => entry.id === subjectId)?.label ?? subjectId
-    const standard = availableStandards.find((entry) => entry.code === standardCode)
-    const standardClarifications = standard?.clarifications ?? []
-    const standardObjectives = standard?.objectives ?? []
 
     try {
-      setLoading(true)
-      setStatusMessage('Generating AI assessment…')
-
-      const aiClassContext =
-        aiContext.classContext?.pedagogy || (aiContext.classContext?.groups?.length ?? 0) > 0
-          ? aiContext.classContext
-          : null
-
-      const blueprint = await safeFetch<AssessmentBlueprint>('/.netlify/functions/generateAssignment', {
+      const payload = {
+        title: formState.title,
+        gradeLevel: formState.gradeLevel,
+        questionCount: formState.questionCount,
+        type: formState.type,
+        standards: [selectedStandard]
+      };
+      const assignment = await safeFetch('/api/generateAssignment', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          standardCode,
-          standardName: standard?.name ?? standardCode,
-          focus: aiContext?.focusNarrative ?? '',
-          subject: subjectLabel,
-          grade: gradeLevel,
-          assessmentType,
-          questionCount,
-          includeRemediation,
-          standardClarifications,
-          standardObjectives,
-          classContext: aiClassContext
-        })
-      })
-
-      // Defensive guards so Firestore never gets undefined fields
-      const cleanBlueprint: AssessmentBlueprint = {
-        standardCode: String(blueprint?.standardCode || standardCode),
-        standardName: String(blueprint?.standardName || (standard?.name ?? standardCode)),
-        subject: String(blueprint?.subject || subjectLabel),
-        grade: String(blueprint?.grade || gradeLevel),
-        assessmentType: (blueprint?.assessmentType as any) || assessmentType,
-        questionCount: Number(blueprint?.questionCount || questionCount),
-        aiInsights: {
-          overview: String(blueprint?.aiInsights?.overview || ''),
-          classStrategies: Array.isArray(blueprint?.aiInsights?.classStrategies)
-            ? blueprint!.aiInsights!.classStrategies
-            : [],
-          nextSteps: Array.isArray(blueprint?.aiInsights?.nextSteps) ? blueprint!.aiInsights!.nextSteps : [],
-          ...(blueprint?.aiInsights?.pedagogy ? { pedagogy: blueprint.aiInsights.pedagogy } : {})
-        },
-        levels: Array.isArray(blueprint?.levels) ? blueprint.levels : []
-      }
-
-      await addDoc(collection(database, `users/${user.uid}/assignments`), {
-        title: title.trim(),
-        status: 'draft',
-        dueDate: dueDate || null,
-        createdAt: Timestamp.now(),
-        blueprint: cleanBlueprint,
-        standardCode: cleanBlueprint.standardCode,
-        assessmentType: cleanBlueprint.assessmentType,
-        questionCount: cleanBlueprint.questionCount
-      })
-
-      setStatusMessage('Assignment generated and saved securely.')
-      setTitle('')
-      setDueDate('')
-    } catch (error: any) {
-      console.error(error)
-      if (error?.status === 401 || error?.status === 403) {
-        setStatusMessage('Your session expired. Refresh and sign in again to generate assignments.')
+        body: JSON.stringify(payload)
+      });
+      setGenerated(assignment);
+      setStatus('Assignment generated and saved.');
+    } catch (generationError) {
+      if (generationError instanceof Error) {
+        setError(generationError.message);
       } else {
-        setStatusMessage(error?.message ?? 'Assignment generation failed.')
+        setError('Failed to generate assignment.');
       }
-    } finally {
-      setLoading(false)
     }
-  }
+  };
 
-  async function updateStatus(id: string, status: Assignment['status']) {
-    if (!user) return
-    const { app } = ensureFirebase()
-    if (!app) {
-      setStatusMessage('Workspace storage is offline. Status changes are paused.')
-      return
-    }
-    const database = getFirestore(app)
-    await updateDoc(doc(database, `users/${user.uid}/assignments/${id}`), { status })
-    setStatusMessage('Status updated.')
-  }
-
-  async function removeAssignment(id: string) {
-    if (!user) return
-    const { app } = ensureFirebase()
-    if (!app) {
-      setStatusMessage('Workspace storage is offline. Deletions are paused.')
-      return
-    }
-    const database = getFirestore(app)
-    await deleteDoc(doc(database, `users/${user.uid}/assignments/${id}`))
-    setStatusMessage('Assignment removed.')
-  }
+  const downloadAssignment = (assignment: Assignment) => {
+    const blob = new Blob([JSON.stringify(assignment, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${assignment.title || 'assignment'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="fade-in" style={{ display: 'grid', gap: 24 }}>
-      {/* form + list UI omitted for brevity in this fix-only file; keep your existing JSX */}
-      {/* Hook up buildAssignment to your form onSubmit */}
-      <form onSubmit={buildAssignment}>
-        {/* ...your existing controls... */}
-        <button disabled={loading} type="submit" className="button button--primary">
-          {loading ? 'Generating…' : 'Generate assignment'}
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold">Assignments</h2>
+      <form className="space-y-3" onSubmit={handleGenerate}>
+        <label className="flex flex-col text-sm">
+          Title
+          <input
+            className="border px-2 py-1"
+            value={formState.title}
+            onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
+          />
+        </label>
+        <label className="flex flex-col text-sm">
+          Grade level
+          <input
+            className="border px-2 py-1"
+            value={formState.gradeLevel}
+            onChange={(event) => setFormState((prev) => ({ ...prev, gradeLevel: event.target.value }))}
+          />
+        </label>
+        <label className="flex flex-col text-sm">
+          Question count
+          <input
+            className="border px-2 py-1"
+            type="number"
+            min={1}
+            value={formState.questionCount}
+            onChange={(event) => setFormState((prev) => ({ ...prev, questionCount: Number(event.target.value) }))}
+          />
+        </label>
+        <label className="flex flex-col text-sm">
+          Item type
+          <select
+            className="border px-2 py-1"
+            value={formState.type}
+            onChange={(event) => setFormState((prev) => ({ ...prev, type: event.target.value }))}
+          >
+            <option value="mcq">Multiple choice</option>
+            <option value="short">Short response</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </label>
+        <label className="flex flex-col text-sm">
+          Standard
+          <select
+            className="border px-2 py-1"
+            value={selectedStandard}
+            onChange={(event) => setSelectedStandard(event.target.value)}
+          >
+            <option value="">Select…</option>
+            {standards.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="px-3 py-1 border rounded" type="submit">
+          Generate assignment
         </button>
-        <div aria-live="polite" style={{ marginTop: 8 }}>{statusMessage}</div>
       </form>
+      {status && <div className="text-green-700">{status}</div>}
+      {error && <div className="text-red-700">{error}</div>}
 
-      {/* Render assignments (unchanged) */}
-      {/* ...your existing assignments grid/list... */}
-    </div>
-  )
-}
+      {generated && (
+        <div className="border rounded p-3">
+          <h3 className="font-semibold">Most recent response</h3>
+          <pre className="text-xs whitespace-pre-wrap bg-slate-100 p-2 mt-2 rounded">
+            {JSON.stringify(generated, null, 2)}
+          </pre>
+          <button className="mt-2 px-3 py-1 border rounded" onClick={() => downloadAssignment(generated)}>
+            Save JSON
+          </button>
+        </div>
+      )}
+
+      <section className="space-y-2">
+        <h3 className="font-semibold">Saved assignments</h3>
+        {assignments.length === 0 ? (
+          <p className="text-sm text-slate-600">No assignments yet. Generate one above.</p>
+        ) : (
+          assignments.map((assignment) => (
+            <article key={assignment.id} className="border rounded p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold">{assignment.title}</h4>
+                  <p className="text-xs text-slate-600">
+                    {assignment.standardCode} • {new Date(assignment.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <button className="px-3 py-1 border rounded" onClick={() => downloadAssignment(assignment)}>
+                  Save JSON
+                </button>
+              </div>
+              <pre className="text-xs whitespace-pre-wrap bg-slate-100 p-2 rounded">
+                {JSON.stringify(assignment, null, 2)}
+              </pre>
+            </article>
+          ))
+        )}
+      </section>
+    </section>
+  );
+};
+
+export default Assignments;

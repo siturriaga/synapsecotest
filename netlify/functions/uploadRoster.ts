@@ -1,119 +1,59 @@
-// netlify/functions/uploadRoster.ts
-import type { Handler, HandlerEvent, HandlerResponse } from "@netlify/functions";
-import Busboy from "busboy"; // Corrected import style
-import { getAdmin, getOptionalStorageBucket, verifyBearerUid } from "./_lib/firebaseAdmin";
-import { Buffer } from "buffer"; // Ensure Buffer is available
-import { v4 as uuidv4 } from "uuid";
-import { withCors } from "./_lib/cors"
+import { Handler } from '@netlify/functions';
+import { z } from 'zod';
+import { getAdminFirestore, verifyIdToken } from './_shared/firebaseAdmin';
 
-// This file handles the multipart form data upload
-// The actual file processing happens in processRoster.ts
+const rosterEntrySchema = z.object({
+  studentId: z.string().min(1),
+  studentName: z.string().min(1),
+  testScorePercent: z.number().min(0).max(100),
+  period: z.string().min(1),
+  testTitle: z.string().min(1)
+});
 
-function json(statusCode: number, body: unknown): HandlerResponse {
-  return { statusCode, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
-}
+const payloadSchema = z.object({
+  entries: z.array(rosterEntrySchema)
+});
 
-const baseHandler: Handler = async (event: HandlerEvent) => {
+export const handler: Handler = async (event) => {
   try {
-    if (event.httpMethod !== "POST") return json(405, { error: "Use POST" });
-    if (!event.body || !event.isBase64Encoded) return json(400, { error: "Missing multipart body" });
-
-    const encodedBody: string = event.body;
-
-    const uid = await verifyBearerUid(event.headers.authorization);
-    if (!uid) return json(401, { error: "Unauthorized" });
-
-    const admin = getAdmin();
-    const [periodRaw, quarterRaw, testName] = [
-      event.queryStringParameters?.period,
-      event.queryStringParameters?.quarter,
-      event.queryStringParameters?.testName
-    ];
-    const periodParsed = periodRaw && periodRaw.trim() !== '' ? Number(periodRaw) : null;
-    const period = periodParsed !== null && Number.isFinite(periodParsed) ? periodParsed : null;
-    const quarter = quarterRaw && quarterRaw.trim() !== '' ? quarterRaw.toUpperCase() : null;
-
-    // Ensure the busboy object is initialized correctly
-    const busboy = Busboy({ headers: event.headers }); // Fix: Call Busboy as a function/constructor
-    
-    const filePromise = new Promise<{ filename: string, mimetype: string, size: number, buffer: Buffer }>((resolve, reject) => {
-      let chunks: Buffer[] = [];
-      let filename = "";
-      let mimetype = "";
-      let size = 0;
-
-      busboy.on("file", (_name: string, file: NodeJS.ReadableStream, info: { filename: string, encoding: string, mimeType: string }) => {
-        // Explicitly type parameters (TS7006 fix)
-        filename = info.filename;
-        mimetype = info.mimeType;
-
-        file.on("data", (d: Buffer) => { // Explicitly type 'd' as Buffer
-          chunks.push(d);
-          size += d.length;
-        });
-
-        file.on("end", () => {
-          resolve({ filename, mimetype, size, buffer: Buffer.concat(chunks) });
-        });
-      });
-
-      busboy.on("error", reject);
-      busboy.on("finish", () => {
-        // If no file was found, but process finished, reject
-        if (!filename) reject(new Error("No file uploaded."));
-      });
-      
-      // Write the event body (buffer) to busboy to start parsing
-      busboy.end(Buffer.from(encodedBody, "base64"));
-    });
-
-    const { filename, mimetype, buffer } = await filePromise;
-    const uploadId = uuidv4();
-    const storage = getOptionalStorageBucket();
-
-    const base64 = buffer.toString("base64");
-    let storageDescriptor: any = { kind: "inline", data: base64 };
-    let storageWarning: string | undefined;
-    if (storage) {
-      const objectPath = `rosters/${uid}/${uuidv4()}-${filename}`;
-      try {
-        await storage.file(objectPath).save(buffer, { metadata: { contentType: mimetype } });
-        storageDescriptor = { kind: "bucket", objectPath };
-      } catch (err: any) {
-        console.error("Roster bucket upload failed, falling back to inline storage", err);
-        storageWarning =
-          err?.code === 404 || /bucket does not exist/i.test(String(err?.message || ""))
-            ? "Configured Firebase Storage bucket was not found. Saved roster inline instead."
-            : "Failed to upload to Firebase Storage. Saved roster inline instead.";
-        storageDescriptor = { kind: "inline", data: base64 };
-      }
-    } else {
-      storageDescriptor = { kind: "inline", data: base64 };
+    const decoded = await verifyIdToken(event.headers.authorization);
+    const { period, quarter } = event.queryStringParameters ?? {};
+    if (!period || !quarter) {
+      return { statusCode: 400, body: 'Missing required query parameters: period and quarter.' };
     }
 
-    await admin.firestore().doc(`users/${uid}/uploads/${uploadId}`).set({
-      filename,
-      mimetype,
-      storage: storageDescriptor,
-      inlineData: base64,
-      period,
-      quarter,
-      testName: (testName || '').trim() || null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      size: buffer.length,
-      ...(storageWarning ? { storageWarning } : {})
+    if (!event.body) {
+      return { statusCode: 400, body: 'Request body is required.' };
+    }
+
+    const parsed = payloadSchema.parse(JSON.parse(event.body));
+
+    const firestore = getAdminFirestore();
+    const batch = firestore.batch();
+    const periodDoc = firestore.collection('users').doc(decoded.uid).collection('rosters').doc(period);
+    const metadataDoc = periodDoc.collection('metadata').doc('info');
+    batch.set(metadataDoc, { quarter, updatedAt: new Date().toISOString() }, { merge: true });
+
+    parsed.entries.forEach((entry) => {
+      const docRef = periodDoc.collection('entries').doc();
+      batch.set(docRef, { ...entry, uploadedAt: new Date().toISOString() });
     });
 
-    return json(200, { uploadId, filename, size: buffer.length });
+    await batch.commit();
 
-  } catch (e: any) {
-    // Log error for debugging
-    console.error("Upload error:", e);
-    return json(e.status || 500, { error: e.message || "Internal server error during upload." });
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ count: parsed.entries.length })
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { statusCode: 400, body: error.message };
+    }
+    const message = error instanceof Error ? error.message : 'Upload failed';
+    const statusCode = message.toLowerCase().includes('missing environment') ? 500 : 400;
+    return {
+      statusCode,
+      body: message
+    };
   }
 };
-
-export const handler = withCors(baseHandler, {
-  methods: ['POST', 'OPTIONS'],
-  headers: ['Accept', 'Content-Type', 'Authorization']
-})
