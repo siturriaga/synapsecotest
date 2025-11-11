@@ -1,0 +1,6 @@
+[build]
+  # Clears the default build command, telling Netlify not to run 'npm ci' or 'npm run build'.
+  command = ""
+  
+  # Tells Netlify to deploy all files directly from the repository root, where index.html lives.
+  publish = "."
