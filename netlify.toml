@@ -1,6 +1,6 @@
 [build]
-  # CRITICAL FIX: The command is blank because there is no 'npm' or 'vite build' step needed.
+  # Skips Node.js installation and build commands entirely.
   command = ""
   
-  # The publish directory is the root of the repository, where index.html is located.
+  # Deploys files directly from the repository root.
   publish = "."
