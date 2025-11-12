@@ -6,7 +6,7 @@ const tdqSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: {
 const mixedSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: { type: "STRING" }, level: { type: "STRING" }, mcqs: { type: "ARRAY", description: `Array of exactly ${Math.floor(count / 2)} Multiple Choice Questions.`, items: { type: "OBJECT", properties: { questionText: { type: "STRING" }, options: { type: "OBJECT", properties: { A: { type: "STRING" }, B: { type: "STRING" }, C: { type: "STRING" }, D: { type: "STRING" } }, required: ["A", "B", "C", "D"] }, correctAnswer: { type: "STRING" } }, required: ["questionText", "options", "correctAnswer"] } }, longerQuestions: { type: "ARRAY", description: `Array of exactly ${Math.ceil(count / 2)} short answer/open-ended questions.`, items: { type: "OBJECT", properties: { prompt: { type: "STRING" }, requiredLength: { type: "STRING", description: "e.g., 2-3 sentences or 1 paragraph." } }, required: ["prompt", "requiredLength"] } } }, required: ["assignmentTitle", "level", "mcqs", "longerQuestions"] });
 
 // --- JSON Schema (Data Analysis) ---
-const analysisSchema = {
+export const analysisSchema = {
     type: "OBJECT",
     properties: {
         masteryBand: {
@@ -33,7 +33,7 @@ const analysisSchema = {
         },
         individualFlags: {
             type: "STRING",
-            description: "Identifies 1-2 specific students (by name/ID if available) who need immediate intervention, based on lowest scores or unique error patterns. Inject N/A if specific student data is missing."
+            description: "Identifies 1-2 specific students (by name/ID if available) who need immediate intervention, based on lowest scores or unique error patterns. Inject N/A if specific data is missing."
         }
     },
     required: ["masteryBand", "generalInsights", "classFindings", "pedagogicalRecommendations", "individualFlags"]
@@ -89,7 +89,8 @@ export function getAssignmentInstructions(standardCode, format, level, count, gr
             break;
         case 'Mixed':
             const halfCount = Math.floor(count / 2);
-            assignmentType = `Generate a Mixed Assignment. It must contain ${halfCount} Multiple Choice Questions (A-D, single correct answer) AND ${Math.ceil(count / 2)} longer Short Answer/Open-Ended Questions.`;
+            // FIX: Corrected typo in prompt from (A-B, C, D) to (A, B, C, D)
+            assignmentType = `Generate a Mixed Assignment. It must contain ${halfCount} Multiple Choice Questions (A, B, C, D and a single correct answer) AND ${Math.ceil(count / 2)} longer Short Answer/Open-Ended Questions.`;
             break;
     }
 
@@ -134,4 +135,4 @@ export function getAnalysisPrompt(standardCode, gradeLevel, fullStandardText, ra
         user: user,
         schema: analysisSchema
     };
-                                                                                                           }
+}
