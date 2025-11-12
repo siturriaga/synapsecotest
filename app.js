@@ -125,7 +125,7 @@ function handleFileUpload(e) {
     reader.readAsText(file);
 }
 
-// --- API Call Utility (Calls our own serverless function) ---
+// --- API Call Utility (NEW: Calls our own serverless function) ---
 async function fetchWithRetries(payload, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
