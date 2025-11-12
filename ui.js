@@ -217,6 +217,7 @@ export function renderAnalysisReport(data, standardCode) {
             <p class="text-sm font-medium">Overall Class Mastery Band</p>
             <p class="text-3xl font-bold">${data.masteryBand.band}</p>
             <p class="mt-1">${data.masteryBand.summary}</p>
+            <!-- FIX: Corrected typo from masterYBand to masteryBand -->
             <p class="text-xs mt-2">Approximate Average Score: ${data.masteryBand.score}</p> 
         </div>
         <div class="p-4 rounded-xl bg-gray-100 border-l-4 border-gray-400 md:col-span-2">
