@@ -8,8 +8,8 @@ import {
     analysisSchema
 } from './ai_logic.js';
 import { 
-    initializeApp as initializeFirebase, 
-    handleGoogleSignIn, 
+    initializeAuth, 
+    handleGoogleSignIn, // <-- This function is now cleaner
     setupAuthStateListener, 
     saveStandardsToFirestore, 
     setupStandardsListener 
@@ -37,17 +37,32 @@ export function initializeApp() {
     cacheDOMElements();
     
     // Attach all event listeners
-    DOMElements['tab-content'].addEventListener('click', () => switchTab());
+    DOMElements['tab-content'].addEventListener('click', () => switchTab('content'));
     DOMElements['tab-data'].addEventListener('click', () => switchTab('data'));
     DOMElements['subject-select'].addEventListener('change', () => populateStandardDropdown(loadedStandardsData, DOMElements['subject-select'].value));
     DOMElements['standards-file'].addEventListener('change', handleFileUpload);
     DOMElements['generate-button'].addEventListener('click', handleGenerateContent);
     DOMElements['analyze-button'].addEventListener('click', handleAnalyzeData);
-    DOMElements['login-button'].addEventListener('click', handleGoogleSignIn);
+    
+    // FIX: Attach login button to a new handler with proper error catching
+    DOMElements['login-button'].addEventListener('click', onLoginClick);
 
     // Start Firebase Auth
-    initializeFirebase();
+    initializeAuth(); 
     setupAuthStateListener(onAuthSuccess, onAuthFailure);
+}
+
+// --- Authentication Callbacks ---
+
+async function onLoginClick() {
+    try {
+        DOMElements['login-status'].textContent = "Opening Google Sign-in...";
+        await handleGoogleSignIn();
+        // The onAuthStateChanged listener will handle the successful login
+    } catch (error) {
+        console.error("Google Sign-In Error:", error);
+        DOMElements['login-status'].textContent = `Sign-in failed: ${error.message}`;
+    }
 }
 
 function onAuthSuccess(user) {
@@ -110,7 +125,7 @@ function handleFileUpload(e) {
     reader.readAsText(file);
 }
 
-// --- API Call Utility (NEW: Calls our own serverless function) ---
+// --- API Call Utility (Calls our own serverless function) ---
 async function fetchWithRetries(payload, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -177,6 +192,9 @@ async function handleGenerateContent() {
 
     setLoadingState(true, 'Generating... (Step 1 of 2: Story)');
     DOMElements['output-card'].classList.remove('hidden');
+    DOMElements['story-content'].style.display = 'block';
+    DOMElements['assignment-output'].style.display = 'block';
+    DOMElements['analysis-output'].style.display = 'none'; // Hide analysis section
 
     try {
         const fullStandardText = getFullStandardText(standardCode, subject);
@@ -226,7 +244,9 @@ async function handleAnalyzeData() {
     
     setLoadingState(true, 'Analyzing Data...');
     DOMElements['output-card'].classList.remove('hidden');
-    DOMElements['analysis-output'].classList.remove('hidden');
+    DOMElements['story-content'].style.display = 'none'; // Hide story section
+    DOMElements['assignment-output'].style.display = 'none'; // Hide assignment section
+    DOMElements['analysis-output'].style.display = 'block';
 
     try {
         const fullStandardText = getFullStandardText(standardCode, subject);
