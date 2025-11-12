@@ -2,11 +2,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from './config.js';
+import { DOMElements } from './ui.js'; // <-- FIX: Import the UI elements
 
 let auth;
 let db;
 
-export function initializeApp() {
+// FIX: Renamed to initializeAuth to avoid naming conflict
+export function initializeAuth() {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
@@ -16,7 +18,10 @@ export function handleGoogleSignIn() {
     const provider = new GoogleAuthProvider();
     signInWithPopup(auth, provider).catch(error => {
         console.error("Google Sign-In Error:", error);
-        document.getElementById('login-status').textContent = `Sign-in failed: ${error.message}`;
+        // FIX: Use the shared DOMElements object instead of document.getElementById
+        if (DOMElements['login-status']) {
+            DOMElements['login-status'].textContent = `Sign-in failed: ${error.message}`;
+        }
     });
 }
 
@@ -58,6 +63,8 @@ export async function saveStandardsToFirestore(userId, jsonData) {
         console.log("Standards saved to Firestore.");
     } catch (e) {
         console.error("Error saving standards:", e);
-        document.getElementById('file-status').textContent = "Error saving file. Check console.";
+        if (DOMElements['file-status']) {
+            DOMElements['file-status'].textContent = "Error saving file. Check console.";
+        }
     }
 }
