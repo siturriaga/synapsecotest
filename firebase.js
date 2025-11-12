@@ -1,66 +1,15 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-// FIX: Removed the extra dot from "firebase-firestore..js"
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { firebaseConfig } from './config.js';
+// 1. Gemini API Endpoint
+// This is NO LONGER the Google URL. It's a secure endpoint on YOUR site.
+export const API_URL = "/.netlify/functions/generate"; 
+// The API_KEY is now 100% server-side and secure.
 
-let auth;
-let db;
-
-export function initializeAuth() {
-    const app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-}
-
-export function handleGoogleSignIn() {
-    const provider = new GoogleAuthProvider();
-    // The function returns the promise. The error will be
-    // caught by the 'onLoginClick' handler in app.js.
-    return signInWithPopup(auth, provider);
-}
-
-export function handleSignOut() {
-    return signOut(auth);
-}
-
-export function setupAuthStateListener(onSuccess, onFailure) {
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            onSuccess(user);
-        } else {
-            onFailure();
-        }
-    });
-}
-
-export function setupStandardsListener(userId, onUpdate) {
-    // This path is private to the user: /users/USER_ID/standards/current
-    const standardsRef = doc(db, `users/${userId}/standards/current`);
-
-    onSnapshot(standardsRef, (docSnap) => {
-        if (docSnap.exists() && docSnap.data().data) {
-            onUpdate(JSON.parse(docSnap.data().data));
-        } else {
-            onUpdate(null); // No custom data, app will use embedded data
-        }
-    }, (error) => {
-        console.error("Error listening to standards:", error);
-        onUpdate(null);
-    });
-}
-
-export async function saveStandardsToFirestore(userId, jsonData) {
-    try {
-        const standardsRef = doc(db, `users/${userId}/standards/current`);
-        await setDoc(standardsRef, {
-            data: JSON.stringify(jsonData),
-            timestamp: new Date().toISOString()
-        });
-        console.log("Standards saved to Firestore.");
-    } catch (e) {
-        console.error("Error saving standards:", e);
-        // We can't access DOMElements here, so we just log the error.
-        // The app.js handler will catch file read errors.
-    }
-}
+// 2. Firebase Configuration (Hardcoded from your input for guaranteed launch)
+export const firebaseConfig = {
+    apiKey: "AIzaSyBT95w8fzJr9J5WCYe8iwFkvSrwXds5sms",
+    authDomain: "trackopmn.firebaseapp.com",
+    projectId: "trackopmn",
+    storageBucket: "trackopmn.firebasestorage.app",
+    messagingSenderId: "325895934431",
+    appId: "1:325895934431:web:50665d95aab0ac1a4b746a",
+    measurementId: "G-QX53NY1CJC"
+};
