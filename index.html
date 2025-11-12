@@ -4,21 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Standards Differentiated Content Generator</title>
-    <!-- Load Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase Imports: Handled via specialized script to allow module access -->
-    <script type="module">
-        import { initializeApp, getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Export core Firebase functions globally for use in app.js
-        window.firebaseExports = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, onSnapshot };
-
-        // Import the main application logic after exporting Firebase dependencies
-        import('./app.js');
-    </script>
     <style>
-        /* ... (CSS styles for spinner and appearance) ... */
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .card { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
         .assignment-output { line-height: 1.6; }
@@ -33,7 +20,6 @@
             height: 2rem;
             animation: spin 1s ease-in-out infinite;
         }
-        /* Custom styling for dropdown appearance */
         select, input[type="file"] {
             appearance: none;
             background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%234b5563'%3e%3cpath d='M7 7l3 3 3-3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
@@ -41,14 +27,37 @@
             background-position: right 0.75rem center;
             background-size: 1.5em 1.5em;
         }
+        /* Hide the app until the user is logged in */
+        #app-container, #initialization-status { display: none; }
+        #login-container { display: block; }
     </style>
 </head>
 <body class="p-4 sm:p-8 min-h-screen">
 
-    <div id="app-container" class="max-w-4xl mx-auto space-y-8 hidden">
+    <!-- Login Container (Visible First) -->
+    <div id="login-container" class="max-w-md mx-auto text-center mt-20">
+        <div class="card bg-white p-8 rounded-xl">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-4">Welcome to the AI Curriculum Tool</h1>
+            <p class="text-gray-600 mb-8">Please sign in with your Google account to continue.</p>
+            <button id="login-button" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition duration-150 shadow-lg text-lg flex items-center justify-center">
+                <svg class="w-6 h-6 mr-3" fill="currentColor" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v8.51h12.8c-.57 2.8-2.3 5.31-4.79 7l7.98 6.19C45.02 37.95 48 31.85 48 24c0-.66-.05-1.31-.14-1.95h.12z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24s.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.98-6.19C30.01 37.8 27.23 38.5 24 38.5c-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                    <path fill="none" d="M0 0h48v48H0z"></path>
+                </svg>
+                Sign in with Google
+            </button>
+            <p id="login-status" class="mt-4 text-sm text-gray-500"></p>
+        </div>
+    </div>
+
+    <!-- Main App Container (Hidden) -->
+    <div id="app-container" class="max-w-4xl mx-auto space-y-8">
         <header class="text-center">
             <h1 class="text-4xl font-extrabold text-gray-900 mb-2">FL Standards Differentiation Tool</h1>
-            <p class="text-gray-600">Generate level-differentiated assignments and data insights.</p>
+            <p class="text-gray-600" id="user-welcome">Welcome!</p>
         </header>
 
         <!-- Tabbed Interface -->
@@ -60,29 +69,16 @@
         <!-- Tab Content 1: Content Generator -->
         <div id="section-content" class="card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500">
             <h2 class="text-2xl font-semibold text-gray-800 mb-6">Assignment Creation Parameters</h2>
-
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-                <!-- File Upload Status -->
                 <div class="lg:col-span-3">
                     <label for="standards-file" class="block text-sm font-semibold text-indigo-700 mb-1">1. Standards File (JSON Upload)</label>
                     <input type="file" id="standards-file" accept=".json" class="w-full text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                     <p id="file-status" class="mt-2 text-sm text-red-500 font-medium"></p>
                 </div>
-
-                <!-- 2. Subject Dropdown -->
                 <div>
                     <label for="subject-select" class="block text-sm font-semibold text-indigo-700 mb-1">2. Select Subject</label>
-                    <select id="subject-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
-                        <option value="Civics">Civics</option>
-                        <option value="USHistory">U.S. History</option>
-                        <option value="WorldHistory">World History</option>
-                        <option value="ELA">ELA</option>
-                        <option value="Math">Math</option>
-                    </select>
+                    <select id="subject-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white"></select>
                 </div>
-
-                <!-- 3. Grade Level Dropdown -->
                 <div>
                     <label for="grade-select" class="block text-sm font-semibold text-indigo-700 mb-1">3. Select Grade Level</label>
                     <select id="grade-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
@@ -91,16 +87,12 @@
                         <option value="8th Grade">8th Grade</option>
                     </select>
                 </div>
-
-                <!-- 4. Standard Code Dropdown -->
                 <div>
                     <label for="standard-select" class="block text-sm font-semibold text-indigo-700 mb-1">4. Select Standard Code</label>
                     <select id="standard-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
                         <option value="" disabled selected>Upload file to load standards</option>
                     </select>
                 </div>
-
-                <!-- 5. Assignment Format Dropdown -->
                 <div>
                     <label for="format-select" class="block text-sm font-semibold text-indigo-700 mb-1">5. Select Format</label>
                     <select id="format-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
@@ -110,8 +102,6 @@
                         <option value="Mixed">Mixed MCQ & Longer Questions</option>
                     </select>
                 </div>
-
-                <!-- 6. Differentiation Level Dropdown -->
                 <div>
                     <label for="level-select" class="block text-sm font-semibold text-indigo-700 mb-1">6. Select Differentiation Level</label>
                     <select id="level-select" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
@@ -121,8 +111,6 @@
                         <option value="ELL">ELL (Minimal Text/Visual Aids)</option>
                     </select>
                 </div>
-
-                <!-- 7. Item Count Dropdown -->
                 <div>
                     <label for="question-count" class="block text-sm font-semibold text-indigo-700 mb-1">7. Item Count</label>
                     <select id="question-count" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 bg-white">
@@ -132,81 +120,49 @@
                     </select>
                 </div>
             </div>
-
-            <!-- Generate Button -->
             <button id="generate-button"
-                class="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg" disabled>
-                Initializing Secure Session...
+                class="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg">
+                Generate Differentiated Content
             </button>
         </div>
 
-        <!-- Tab Content 2: Data Analyzer (Hidden by default) -->
+        <!-- Tab Content 2: Data Analyzer (Hidden) -->
         <div id="section-data" class="card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500 hidden">
             <h2 class="text-2xl font-semibold text-gray-800 mb-6">Pedagogical Data Analyzer</h2>
-
             <div class="space-y-4">
                 <p class="text-sm text-gray-600">Analyze performance by selecting a standard and pasting raw test data below (e.g., student ID, score, common errors, etc., from CSV/Excel). Data will be analyzed against the selected standard to provide insights.</p>
-
-                <!-- Data Paste Area -->
                 <div>
                     <label for="raw-data-input" class="block text-sm font-semibold text-indigo-700 mb-1">Raw Performance Data (Paste CSV/Excel Data Here)</label>
                     <textarea id="raw-data-input" rows="8" placeholder="Paste data here. Format: Student ID, Student Name, Score, Errors/Variations..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700"></textarea>
                 </div>
             </div>
-
             <button id="analyze-button"
-                class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg" disabled>
+                class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg">
                 Analyze Data & Generate Report
             </button>
-
-            <!-- Data Analyzer Output -->
-            <div id="analysis-output" class="mt-8 space-y-6 hidden">
-                <h3 class="text-xl font-semibold text-gray-800 border-b pb-2">Analysis Results</h3>
-
-                <!-- Mastery Band Dashboard -->
-                <div id="mastery-dashboard" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <!-- Cards will be injected here -->
-                </div>
-
-                <!-- AI Generated Insights -->
-                <div id="ai-insights" class="space-y-6">
-                    <!-- General, Class, and Individual Insights will be injected here -->
-                </div>
-            </div>
         </div>
 
-        <!-- Output Area (Shared for Content Generation) -->
+        <!-- Output Area (Shared) -->
         <div id="output-card" class="card bg-white p-6 rounded-xl border-t-4 border-indigo-500 hidden">
-
-            <!-- Loading State -->
             <div id="loading-indicator" class="flex justify-center items-center py-10 hidden">
                 <div class="spinner mr-3"></div>
-                <p class="text-lg text-indigo-600">Generating content... please wait. (This requires two API calls.)</p>
+                <p class="text-lg text-indigo-600">Generating content... please wait.</p>
             </div>
-
-            <!-- Story Output -->
-            <div id="story-content" class="mb-8">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-3 border-b pb-2">The Friendly Nag (Story & Context)</h2>
-                <!-- Story will be injected here -->
+            <div id="story-content" class="mb-8"></div>
+            <div id="assignment-output"></div>
+            <div id="analysis-output" class="mt-8 space-y-6 hidden">
+                <h3 class="text-xl font-semibold text-gray-800 border-b pb-2">Analysis Results</h3>
+                <div id="mastery-dashboard" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+                <div id="ai-insights" class="space-y-6"></div>
             </div>
-
-            <!-- Assignment Output -->
-            <div id="assignment-output">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-3 border-b pb-2">Assignment Output</h2>
-                <div id="assignment-content" class="assignment-output space-y-6">
-                    <!-- Assignment will be injected here -->
-                </div>
-            </div>
-
-            <!-- Error Message -->
             <div id="error-message" class="text-red-600 font-medium mt-6 hidden"></div>
         </div>
     </div>
 
-    <!-- Initialization Status for Debugging -->
+    <!-- Initialization Status -->
     <div id="initialization-status" class="fixed top-0 left-0 m-4 p-2 bg-indigo-500 text-white text-xs rounded shadow-lg">Initializing...</div>
-
-    <script type="module" src="./app.js"></script>
+    
+    <!-- This file is now the ONLY place where JS is loaded -->
+    <script type(="module" src="./app.js"></script>
 </body>
 </html>
-```
