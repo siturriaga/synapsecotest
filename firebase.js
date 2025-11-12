@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 // FIX: Removed the extra dot from "firebase-firestore..js"
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from './config.js';
@@ -18,6 +18,10 @@ export function handleGoogleSignIn() {
     // The function returns the promise. The error will be
     // caught by the 'onLoginClick' handler in app.js.
     return signInWithPopup(auth, provider);
+}
+
+export function handleSignOut() {
+    return signOut(auth);
 }
 
 export function setupAuthStateListener(onSuccess, onFailure) {
