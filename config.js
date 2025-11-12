@@ -1,5 +1,3 @@
-// This file holds the application configuration.
-
 // 1. Gemini API Endpoint
 // This is NO LONGER the Google URL. It's a secure endpoint on YOUR site.
 export const API_URL = "/.netlify/functions/generate"; 
