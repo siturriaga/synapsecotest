@@ -35,6 +35,7 @@ let currentUserId = null;
 
 // --- Main App Initialization ---
 export function initializeApp() {
+    // FIX: Cache all HTML elements FIRST, before attaching listeners
     cacheDOMElements();
     
     // Attach all event listeners
@@ -190,14 +191,12 @@ function getFullStandardText(standardCode, subject) {
     
     if (standard.full_text) return standard.full_text;
     
-    // FIX: Corrected typo 'std.desc' to 'standard.desc'
     let fullText = standard.name || standard.desc; 
     
     if (standard.internal?.clarifications) {
         fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
     }
     if (standard.internal?.objectives) {
-        // FIX: Corrected typo " | OBJECTIVES: "D + "
         fullText += " | OBJECTIVES: " + standard.internal.objectives.join('; ');
     }
     return fullText;
