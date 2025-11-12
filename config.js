@@ -1,9 +1,9 @@
 // This file holds the application configuration.
 
-// 1. Gemini API Key (Hardcoded for stability)
-//    If this key is exposed, you MUST enable domain restrictions in your Google Cloud dashboard.
-export const API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"; // <-- PASTE YOUR KEY HERE
-export const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+// 1. Gemini API Endpoint
+// This is NO LONGER the Google URL. It's a secure endpoint on YOUR site.
+export const API_URL = "/.netlify/functions/generate"; 
+// The API_KEY is now 100% server-side and secure.
 
 // 2. Firebase Configuration (Hardcoded from your input for guaranteed launch)
 export const firebaseConfig = {
