@@ -1,8 +1,4 @@
-// This file manages all direct DOM manipulation (rendering, state changes).
-// It is imported by app.js and does not run on its own.
-
-// --- DOM Element Cache ---
-// This object will be populated by app.js
+// DOM cache
 export const DOMElements = {};
 
 export function cacheDOMElements() {
@@ -14,14 +10,12 @@ export function cacheDOMElements() {
         'login-container', 'login-button', 'login-status', 'user-welcome',
         'tab-content', 'tab-data', 'section-content', 'section-data', 
         'raw-data-input', 'analysis-output', 'mastery-dashboard', 'ai-insights',
-        'sign-out-button'
+        'sign-out-button', 'question-count'
     ];
     ids.forEach(id => {
         DOMElements[id] = document.getElementById(id);
     });
 }
-
-// --- UI State Changers ---
 
 export function switchTab(target) {
     if (target === 'content') {
@@ -89,7 +83,7 @@ export function populateStandardDropdown(standardsData, subject) {
     standardSelect.innerHTML = '';
     standardSelect.disabled = true;
 
-    const standardsList = standardsData[subject] || [];
+    const standardsList = (standardsData[subject] && standardsData[subject].standards) ? standardsData[subject].standards : [];
     
     if (standardsList.length > 0) {
         standardsList.forEach(std => {
@@ -104,8 +98,6 @@ export function populateStandardDropdown(standardsData, subject) {
         standardSelect.innerHTML = `<option value="" disabled selected>No standards for ${subject}</option>`;
     }
 }
-
-// --- Content Rendering Functions ---
 
 export function renderStory(text, level) { 
     let formattedText = text;
@@ -217,7 +209,6 @@ export function renderAnalysisReport(data, standardCode) {
             <p class="text-sm font-medium">Overall Class Mastery Band</p>
             <p class="text-3xl font-bold">${data.masteryBand.band}</p>
             <p class="mt-1">${data.masteryBand.summary}</p>
-            <!-- FIX: Corrected typo from masterYBand to masteryBand -->
             <p class="text-xs mt-2">Approximate Average Score: ${data.masteryBand.score}</p> 
         </div>
         <div class="p-4 rounded-xl bg-gray-100 border-l-4 border-gray-400 md:col-span-2">
@@ -232,7 +223,7 @@ export function renderAnalysisReport(data, standardCode) {
             <h4 class="text-lg font-bold text-gray-800 mb-2">General Pedagogical Findings</h4>
             <p class="text-gray-700">${data.generalInsights}</p>
         </div>
-        <div class="p-5 border border-gray-200 rounded-xl">
+        <div class="p-5 border border-gray-200 rounded-xl"> 
             <h4 class="text-lg font-bold text-gray-800 mb-2">Specific Class Deficits (Fuzzy Concepts/Variations)</h4>
             <p class="text-gray-700">${data.classFindings}</p>
         </div>
