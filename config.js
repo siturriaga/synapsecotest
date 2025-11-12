@@ -1,13 +1,11 @@
-// This code now explicitly looks for the "GEMINI_API_KEY" from your environment variables.
-// It assumes your environment (e..g, Netlify) makes this variable available.
-// In a secure environment, this key is often injected, not exposed.
-// We assume the environment handles this.
-const injectedApiKey = typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : "";
+// This file holds the application configuration.
 
-export const API_KEY = injectedApiKey; 
+// 1. Gemini API Key (Hardcoded for stability)
+//    If this key is exposed, you MUST enable domain restrictions in your Google Cloud dashboard.
+export const API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"; // <-- PASTE YOUR KEY HERE
 export const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
 
-// Guaranteed Firebase Configuration (Hardcoded to ensure launch success)
+// 2. Firebase Configuration (Hardcoded from your input for guaranteed launch)
 export const firebaseConfig = {
     apiKey: "AIzaSyBT95w8fzJr9J5WCYe8iwFkvSrwXds5sms",
     authDomain: "trackopmn.firebaseapp.com",
@@ -15,9 +13,5 @@ export const firebaseConfig = {
     storageBucket: "trackopmn.firebasestorage.app",
     messagingSenderId: "325895934431",
     appId: "1:325895934431:web:50665d95aab0ac1a4b746a",
-    measurementId: "G-QX53NY1CJC" 
+    measurementId: "G-QX53NY1CJC"
 };
-
-// Global environment access (Used for runtime tokens/IDs only)
-export const getToken = () => typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-export const getAppId = () => typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.appId;
