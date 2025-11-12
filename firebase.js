@@ -7,6 +7,7 @@ import { firebaseConfig } from './config.js';
 let auth;
 let db;
 
+// FIX: Renamed to initializeAuth to avoid naming conflict
 export function initializeAuth() {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
