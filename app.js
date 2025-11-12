@@ -9,7 +9,8 @@ import {
 } from './ai_logic.js';
 import { 
     initializeAuth, 
-    handleGoogleSignIn, // <-- This function is now cleaner
+    handleGoogleSignIn, 
+    handleSignOut,
     setupAuthStateListener, 
     saveStandardsToFirestore, 
     setupStandardsListener 
@@ -43,9 +44,8 @@ export function initializeApp() {
     DOMElements['standards-file'].addEventListener('change', handleFileUpload);
     DOMElements['generate-button'].addEventListener('click', handleGenerateContent);
     DOMElements['analyze-button'].addEventListener('click', handleAnalyzeData);
-    
-    // FIX: Attach login button to a new handler with proper error catching
     DOMElements['login-button'].addEventListener('click', onLoginClick);
+    DOMElements['sign-out-button'].addEventListener('click', onSignOutClick);
 
     // Start Firebase Auth
     initializeAuth(); 
@@ -64,6 +64,16 @@ async function onLoginClick() {
         DOMElements['login-status'].textContent = `Sign-in failed: ${error.message}`;
     }
 }
+
+async function onSignOutClick() {
+    try {
+        await handleSignOut();
+        // onAuthStateChanged will handle hiding the app and showing the login screen
+    } catch (error) {
+        console.error("Sign Out Error:", error);
+    }
+}
+
 
 function onAuthSuccess(user) {
     firebaseReady = true;
@@ -125,7 +135,7 @@ function handleFileUpload(e) {
     reader.readAsText(file);
 }
 
-// --- API Call Utility (NEW: Calls our own serverless function) ---
+// --- API Call Utility (Calls our own serverless function) ---
 async function fetchWithRetries(payload, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -173,9 +183,10 @@ function getFullStandardText(standardCode, subject) {
         const standard = standards.find(s => s.code === standardCode);
         if (standard) {
             if (standard.full_text) return standard.full_text;
-            let fullText = standard.name || std.desc;
+            // FIX: Corrected typo 'std.desc' to 'standard.desc'
+            let fullText = standard.name || standard.desc; 
             if (standard.internal?.clarifications) fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
-            if (standard.internal?.objectives) fullText += " | OBJECTIVES: " + standard.internal.objectives.join('; ');
+            if (standard.internal?.objectives) fullText += " | OBJECTIVES: "D + standard.internal.objectives.join('; ');
             return fullText;
         }
     }
