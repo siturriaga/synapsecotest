@@ -8,10 +8,8 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .card { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
-        .assignment-output { line-height: 1.6; }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        .assignment-output { line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .spinner {
             border: 4px solid rgba(0, 0, 0, 0.1);
             border-top-color: #3b82f6;
@@ -27,16 +25,16 @@
             background-position: right 0.75rem center;
             background-size: 1.5em 1.5em;
         }
-        #app-container, #initialization-status { display: none; }
+        /* Hide the app until the user is logged in */
+        #app-container { display: none; }
         #login-container { display: block; }
     </style>
 </head>
 <body class="p-4 sm:p-8 min-h-screen">
 
-    <!-- Login Container (Visible First) -->
     <div id="login-container" class="max-w-md mx-auto text-center mt-20">
         <div class="card bg-white p-8 rounded-xl">
-            <h1 class="text-3xl font-extrabold text-gray-900 mb-4">Welcome to the AI Curriculum Tool</h1>
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-4">AI Curriculum Tool</h1>
             <p class="text-gray-600 mb-8">Please sign in with your Google account to continue.</p>
             <button id="login-button" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition duration-150 shadow-lg text-lg flex items-center justify-center">
                 <svg class="w-6 h-6 mr-3" fill="currentColor" viewBox="0 0 48 48">
@@ -52,20 +50,17 @@
         </div>
     </div>
 
-    <!-- Main App Container (Hidden) -->
     <div id="app-container" class="max-w-4xl mx-auto space-y-8">
         <header class="text-center">
             <h1 class="text-4xl font-extrabold text-gray-900 mb-2">FL Standards Differentiation Tool</h1>
             <p class="text-gray-600" id="user-welcome">Welcome!</p>
         </header>
 
-        <!-- Tabbed Interface -->
         <div class="flex border-b border-gray-200">
             <button id="tab-content" class="px-4 py-2 text-sm font-medium border-r border-gray-200 text-white bg-indigo-600 rounded-tl-lg hover:bg-indigo-700 transition">Content Generator</button>
             <button id="tab-data" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-tr-lg hover:bg-gray-200 transition">Data Analyzer</button>
         </div>
 
-        <!-- Tab Content 1: Content Generator -->
         <div id="section-content" class="card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500">
             <h2 class="text-2xl font-semibold text-gray-800 mb-6">Assignment Creation Parameters</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -120,12 +115,11 @@
                 </div>
             </div>
             <button id="generate-button"
-                class="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg">
-                Generate Differentiated Content
+                class="w-full mt-8 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-lg text-lg" disabled>
+                Sign in to Generate
             </button>
         </div>
 
-        <!-- Tab Content 2: Data Analyzer (Hidden) -->
         <div id="section-data" class="card bg-white p-6 rounded-b-xl border-t-4 border-indigo-500 hidden">
             <h2 class="text-2xl font-semibold text-gray-800 mb-6">Pedagogical Data Analyzer</h2>
             <div class="space-y-4">
@@ -136,12 +130,11 @@
                 </div>
             </div>
             <button id="analyze-button"
-                class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg">
-                Analyze Data & Generate Report
+                class="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition duration-150 shadow-lg text-lg" disabled>
+                Sign in to Analyze
             </button>
         </div>
 
-        <!-- Output Area (Shared) -->
         <div id="output-card" class="card bg-white p-6 rounded-xl border-t-4 border-indigo-500 hidden">
             <div id="loading-indicator" class="flex justify-center items-center py-10 hidden">
                 <div class="spinner mr-3"></div>
@@ -157,15 +150,7 @@
             <div id="error-message" class="text-red-600 font-medium mt-6 hidden"></div>
         </div>
     </div>
-
-    <!-- Initialization Status -->
-    <div id="initialization-status" class="fixed top-0 left-0 m-4 p-2 bg-indigo-500 text-white text-xs rounded shadow-lg">Initializing...</div>
     
-    <!-- 
-      FIX: The 'type' attribute was mistyped as 'type(=' which caused the browser
-      to load app.js as a regular script, triggering an 'import' syntax error.
-      It is now corrected to type="module".
-    -->
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./main.js"></script>
 </body>
 </html>
