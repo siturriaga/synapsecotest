@@ -13,7 +13,8 @@ export function cacheDOMElements() {
         'assignment-output', 'error-message', 'standards-file', 'file-status', 
         'login-container', 'login-button', 'login-status', 'user-welcome',
         'tab-content', 'tab-data', 'section-content', 'section-data', 
-        'raw-data-input', 'analysis-output', 'mastery-dashboard', 'ai-insights'
+        'raw-data-input', 'analysis-output', 'mastery-dashboard', 'ai-insights',
+        'sign-out-button'
     ];
     ids.forEach(id => {
         DOMElements[id] = document.getElementById(id);
@@ -216,7 +217,7 @@ export function renderAnalysisReport(data, standardCode) {
             <p class="text-sm font-medium">Overall Class Mastery Band</p>
             <p class="text-3xl font-bold">${data.masteryBand.band}</p>
             <p class="mt-1">${data.masteryBand.summary}</p>
-            <p class="text-xs mt-2">Approximate Average Score: ${data.masterYBand.score}</p>
+            <p class="text-xs mt-2">Approximate Average Score: ${data.masteryBand.score}</p> 
         </div>
         <div class="p-4 rounded-xl bg-gray-100 border-l-4 border-gray-400 md:col-span-2">
             <p class="text-sm font-medium text-gray-700">Standard Analyzed</p>
@@ -230,7 +231,6 @@ export function renderAnalysisReport(data, standardCode) {
             <h4 class="text-lg font-bold text-gray-800 mb-2">General Pedagogical Findings</h4>
             <p class="text-gray-700">${data.generalInsights}</p>
         </div>
-        <!-- FIX: Corrected 'classs' typo to 'class' -->
         <div class="p-5 border border-gray-200 rounded-xl">
             <h4 class="text-lg font-bold text-gray-800 mb-2">Specific Class Deficits (Fuzzy Concepts/Variations)</h4>
             <p class="text-gray-700">${data.classFindings}</p>
