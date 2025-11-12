@@ -27,7 +27,6 @@
             background-position: right 0.75rem center;
             background-size: 1.5em 1.5em;
         }
-        /* Hide the app until the user is logged in */
         #app-container, #initialization-status { display: none; }
         #login-container { display: block; }
     </style>
@@ -162,7 +161,11 @@
     <!-- Initialization Status -->
     <div id="initialization-status" class="fixed top-0 left-0 m-4 p-2 bg-indigo-500 text-white text-xs rounded shadow-lg">Initializing...</div>
     
-    <!-- This file is now the ONLY place where JS is loaded -->
-    <script type(="module" src="./app.js"></script>
+    <!-- 
+      FIX: The 'type' attribute was mistyped as 'type(=' which caused the browser
+      to load app.js as a regular script, triggering an 'import' syntax error.
+      It is now corrected to type="module".
+    -->
+    <script type="module" src="./app.js"></script>
 </body>
 </html>
