@@ -2,12 +2,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from './config.js';
-import { DOMElements } from './ui.js'; // <-- FIX: Import the UI elements
+// FIX: Do NOT import from ui.js. This created a circular dependency.
 
 let auth;
 let db;
 
-// FIX: Renamed to initializeAuth to avoid naming conflict
 export function initializeAuth() {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
@@ -16,22 +15,16 @@ export function initializeAuth() {
 
 export function handleGoogleSignIn() {
     const provider = new GoogleAuthProvider();
-    signInWithPopup(auth, provider).catch(error => {
-        console.error("Google Sign-In Error:", error);
-        // FIX: Use the shared DOMElements object instead of document.getElementById
-        if (DOMElements['login-status']) {
-            DOMElements['login-status'].textContent = `Sign-in failed: ${error.message}`;
-        }
-    });
+    // FIX: The function now returns the promise. The error will be
+    // caught by the 'onLoginClick' handler in app.js.
+    return signInWithPopup(auth, provider);
 }
 
 export function setupAuthStateListener(onSuccess, onFailure) {
     onAuthStateChanged(auth, (user) => {
         if (user) {
-            // User is signed in, pass the user object to the app
             onSuccess(user);
         } else {
-            // User is signed out
             onFailure();
         }
     });
@@ -63,8 +56,7 @@ export async function saveStandardsToFirestore(userId, jsonData) {
         console.log("Standards saved to Firestore.");
     } catch (e) {
         console.error("Error saving standards:", e);
-        if (DOMElements['file-status']) {
-            DOMElements['file-status'].textContent = "Error saving file. Check console.";
-        }
+        // We can't access DOMElements here, so we just log the error.
+        // The app.js handler will catch file read errors.
     }
 }
