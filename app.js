@@ -179,18 +179,28 @@ function getInputs() {
 
 function getFullStandardText(standardCode, subject) { 
     const standards = loadedStandardsData[subject];
-    if (standards) {
-        const standard = standards.find(s => s.code === standardCode);
-        if (standard) {
-            if (standard.full_text) return standard.full_text;
-            // FIX: Corrected typo 'std.desc' to 'standard.desc'
-            let fullText = standard.name || standard.desc; 
-            if (standard.internal?.clarifications) fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
-            if (standard.internal?.objectives) fullText += " | OBJECTIVES: "D + standard.internal.objectives.join('; ');
-            return fullText;
-        }
+    if (!standards) {
+        return `Standard text not found for ${standardCode}. Generating based on code only.`;
     }
-    return `Standard text not found for ${standardCode}. Generating based on code only.`;
+
+    const standard = standards.find(s => s.code === standardCode);
+    if (!standard) {
+        return `Standard text not found for ${standardCode}. Generating based on code only.`;
+    }
+    
+    if (standard.full_text) return standard.full_text;
+    
+    // FIX: Corrected typo 'std.desc' to 'standard.desc'
+    let fullText = standard.name || standard.desc; 
+    
+    if (standard.internal?.clarifications) {
+        fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
+    }
+    if (standard.internal?.objectives) {
+        // FIX: Corrected typo " | OBJECTIVES: "D + "
+        fullText += " | OBJECTIVES: " + standard.internal.objectives.join('; ');
+    }
+    return fullText;
 }
 
 // --- Main Event Handlers (Generation Logic) ---
