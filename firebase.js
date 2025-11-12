@@ -1,13 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+// FIX: Removed the extra dot from "firebase-firestore..js"
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from './config.js';
-// FIX: Do NOT import from ui.js. This created a circular dependency.
 
 let auth;
 let db;
 
-// FIX: Renamed to initializeAuth to avoid naming conflict
 export function initializeAuth() {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
@@ -16,7 +15,7 @@ export function initializeAuth() {
 
 export function handleGoogleSignIn() {
     const provider = new GoogleAuthProvider();
-    // FIX: The function now returns the promise. The error will be
+    // The function returns the promise. The error will be
     // caught by the 'onLoginClick' handler in app.js.
     return signInWithPopup(auth, provider);
 }
