@@ -34,8 +34,8 @@ let firebaseReady = false;
 let currentUserId = null; 
 
 // --- Main App Initialization ---
+// This function is now ONLY called by main.js *after* the DOM is loaded.
 export function initializeApp() {
-    // FIX: Cache all HTML elements FIRST, before attaching listeners
     cacheDOMElements();
     
     // Attach all event listeners
