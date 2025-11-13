@@ -1,13 +1,9 @@
 [build]
-  # No build step (kept as-is to respect your "no new files" constraint)
+  # No build step – you're serving plain index.html + JS
   command = ""
   publish = "."
 
 [functions]
-  directory = "netlify/functions/"
-
-# Allow Google sign-in popups to close cleanly (fixes COOP warning/spam)
-[[headers]]
-  for = "/*"
-  [headers.values]
-  Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+  # Folder where your Netlify functions live
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
