@@ -4,8 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Standards Differentiated Content Generator</title>
-    <!-- Keeping Tailwind CDN to honor "no new files". The production warning is safe to ignore for now. -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase Imports -->
+    <script type="module">
+        // Make firebase functions available globally on the window object
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebase = {
+            initializeApp,
+            getAuth,
+            onAuthStateChanged,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            getFirestore,
+            doc,
+            setDoc,
+            onSnapshot
+        };
+    </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .card { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
@@ -165,7 +184,782 @@
         </div>
     </div>
     
-    <!-- This is now the ONLY script tag. It imports the application logic. -->
-    <script type="module" src="./main.js"></script>
+    <!-- 
+      FIX: This script is now at the BOTTOM of the body, so all HTML elements
+      above it are guaranteed to exist when it runs. This eliminates all
+      "Cannot read properties of null" errors.
+    -->
+    <script type="module">
+        
+        // --- 1. CONFIG (From config.js) ---
+        
+        // Secure Netlify function endpoint
+        const API_URL = "/.netlify/functions/generate"; 
+        
+        // Firebase Configuration (Hardcoded for guaranteed launch)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBT95w8fzJr9J5WCYe8iwFkvSrwXds5sms",
+            authDomain: "trackopmn.firebaseapp.com",
+            projectId: "trackopmn",
+            storageBucket: "trackopmn.firebasestorage.app",
+            messagingSenderId: "325895934431",
+            appId: "1:325895934431:web:50665d95aab0ac1a4b746a",
+            measurementId: "G-QX53NY1CJC"
+        };
+        
+        // --- 2. CURRICULUM DATA (From curriculum.js) ---
+        
+        const initialStandardsImport = {
+            "Civics": {
+                "subject": "Civics", "grade": 7, "standards": [
+                    {"code": "SS.7.CG.1.1", "desc": "Ancient Influences on Republic", "full_text": "Standard: Analyze the influences of ancient Greece, ancient Rome and the Judeo-Christian tradition on America's constitutional republic. Clarifications: Students will explain the influence of ancient Greece (e.g., civic participation, legislative bodies, voting rights, written constitution); ancient Rome (e.g., republicanism, rule of law, separation of powers); and Judeo-Christian ethics (justice, individual worth)."},
+                    {"code": "SS.7.CG.1.10", "desc": "Federalists vs. Anti-Federalists", "full_text": "Compare the viewpoints of the Federalists and the Anti-Federalists regarding ratification of the U.S. Constitution and including a bill of rights. Clarifications: Identify arguments for a strong central government (Federalists) vs. demand for a Bill of Rights (Anti-Federalists)."},
+                    {"code": "SS.7.CG.1.11", "desc": "Define Rule of Law", "full_text": "Define the rule of law and recognize its influence on the development of legal, political and governmental systems in the United States. Clarifications: Contrast characteristics of a society with the rule of law vs. one without. Assess importance of due process."},
+                ]
+            },
+            "USHistory": {
+                "subject": "U.S. History", "grade": 6, "standards": [
+                    {"code": "SS.68.AA.1.1", "desc": "Afro-Eurasian trade pre-Atlantic slave trade", "full_text": "Identify Afro-Eurasian trade routes and methods prior to the development of the Atlantic slave trade. Instruction includes how slavery was utilized in Asian, European and African cultures and the similarities and differences between serfdom and slavery."},
+                    {"code": "SS.68.AA.1.3", "desc": "Indentured Servitude Evolution", "full_text": "Examine the evolution of the labor force in the use of indentured servitude contracts. Instruction includes the comparative treatment of indentured servants of European and African extraction and the transition from an indentured to a slave-based economy."}
+                ]
+            },
+            "ELA": {
+                "subject": "ELA", "grade": 6, "standards": [
+                    {"code": "ELA.7.R.1.3", "desc": "Explain influence of narrator/POV", "full_text": "Explain the influence of narrator(s), including unreliable narrator(s), and/or shifts in point of view in a literary text. Clarifications: Unreliable narrator lacks credibility; shifts in point of view change perspective for effect."},
+                    {"code": "ELA.6.C.1.3", "desc": "Write and support a claim", "full_text": "Write and support a claim using logical reasoning, relevant evidence from multiple sources, elaboration, and a logical organizational structure with varied transitions."}
+                ]
+            },
+            "Math": {
+                "subject": "Math", "grade": 7, "standards": [
+                    {"code": "MA.7.AR.3.4", "desc": "Solving Equations/Inequalities", "full_text": "Write and solve linear two-step equations and inequalities in one variable."},
+                    {"code": "MA.6.GR.1.1", "desc": "Area of Polygons", "full_text": "Find the area of polygons by decomposing them into triangles and rectangles."}
+                ]
+            },
+            "WorldHistory": {
+                "subject": "World History", "grade": 6, "standards": [
+                    {"code": "SS.6.W.2.1", "desc": "Ancient River Civilizations", "full_text": "Describe the main characteristics and beliefs of major river valley civilizations (Mesopotamia, Egypt, Indus, China)."}
+                ]
+            }
+        };
+        
+        // --- 3. AI LOGIC (From ai_logic.js) ---
+        
+        // Schemas
+        const quizSchema = (count) => ({ type: "OBJECT", properties: { quizTitle: { type: "STRING" }, level: { type: "STRING" }, questions: { type: "ARRAY", description: `Array of exactly ${count} multiple-choice questions.`, items: { type: "OBJECT", properties: { questionText: { type: "STRING" }, options: { type: "OBJECT", properties: { A: { type: "STRING" }, B: { type: "STRING" }, C: { type: "STRING" }, D: { type: "STRING" } }, required: ["A", "B", "C", "D"] }, correctAnswer: { type: "STRING" } }, required: ["questionText", "options", "correctAnswer"] } } }, required: ["quizTitle", "level", "questions"] });
+        const conceptMapSchema = (count) => ({ type: "OBJECT", properties: { title: { type: "STRING" }, level: { type: "STRING" }, concepts: { type: "ARRAY", description: `Array of exactly ${count} core concepts and their differentiated definitions.`, items: { type: "OBJECT", properties: { concept: { type: "STRING" }, definition: { type: "STRING" }, }, required: ["concept", "definition"] } } }, required: ["title", "level", "concepts"] });
+        const tdqSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: { type: "STRING" }, level: { type: "STRING" }, story: { type: "STRING", description: "The full story/informational text generated for the TDQs." }, questions: { type: "ARRAY", description: `Array of exactly ${count} Text-Dependent Questions (TDQs).`, items: { type: "OBJECT", properties: { question: { type: "STRING" }, complexity: { type: "STRING", description: "DOK Level (1, 2, 3, or 4)." }, }, required: ["question", "complexity"] } } }, required: ["assignmentTitle", "level", "story", "questions"] });
+        const mixedSchema = (count) => ({ type: "OBJECT", properties: { assignmentTitle: { type: "STRING" }, level: { type: "STRING" }, mcqs: { type: "ARRAY", description: `Array of exactly ${Math.floor(count / 2)} Multiple Choice Questions.`, items: { type: "OBJECT", properties: { questionText: { type: "STRING" }, options: { type: "OBJECT", properties: { A: { type: "STRING" }, B: { type: "STRING" }, C: { type: "STRING" }, D: { type: "STRING" } }, required: ["A", "B", "C", "D"] }, correctAnswer: { type: "STRING" } }, required: ["questionText", "options", "correctAnswer"] } }, longerQuestions: { type: "ARRAY", description: `Array of exactly ${Math.ceil(count / 2)} short answer/open-ended questions.`, items: { type: "OBJECT", properties: { prompt: { type: "STRING" }, requiredLength: { type: "STRING", description: "e.g., 2-3 sentences or 1 paragraph." } }, required: ["prompt", "requiredLength"] } } }, required: ["assignmentTitle", "level", "mcqs", "longerQuestions"] });
+        const analysisSchema = {
+            type: "OBJECT",
+            properties: {
+                masteryBand: {
+                    type: "OBJECT",
+                    description: "Overall class performance band.",
+                    properties: {
+                        band: { type: "STRING", enum: ["High Mastery", "Proficient", "Developing", "Needs Remediation"] },
+                        score: { type: "STRING", description: "Approximate class average score (e.g., 78%)." },
+                        summary: { type: "STRING", description: "One sentence summary of the status." }
+                    },
+                    required: ["band", "score", "summary"]
+                },
+                generalInsights: {
+                    type: "STRING",
+                    description: "General, high-level pedagogical findings for the class (1-2 paragraphs)."
+                },
+                classFindings: {
+                    type: "STRING",
+                    description: "Specific common errors, fuzzy concepts, or variations in student answers (1-2 paragraphs). Inject N/A if specific data is missing."
+                },
+                pedagogicalRecommendations: {
+                    type: "STRING",
+                    description: "Actionable, multi-step teaching strategies for remediation, customized to the found deficits (1-2 paragraphs)."
+                },
+                individualFlags: {
+                    type: "STRING",
+                    description: "Identifies 1-2 specific students (by name/ID if available) who need immediate intervention, based on lowest scores or unique error patterns. Inject N/A if specific data is missing."
+                }
+            },
+            required: ["masteryBand", "generalInsights", "classFindings", "pedagogicalRecommendations", "individualFlags"]
+        };
+
+        // Prompts
+        function getStoryPrompt(standardCode, level, gradeLevel, fullStandardText) { 
+            let storyRules = "Generate a story (2-3 paragraphs) that explains the core concept of the standard.";
+            let storyStyle = `You must write for a **${gradeLevel}** student. Use a nagging, yet supportive, tutor persona to transmit the information. Be culturally responsible.`;
+
+            if (level === 'ELL') {
+                storyRules = "Generate a story that explains the core concept of the standard. The narrative must be exactly 2-3 **very short, simple sentences** per paragraph, using the simplest vocabulary possible. Immediately after the story, provide a single sentence describing a simple picture or visual aid that the teacher should use to teach this concept (e.g., 'Visual Aid Suggestion: Picture of two kids sharing a cookie.').";
+                storyStyle = `Use a supportive, encouraging tone. Use minimal to no complex English suitable for a **${gradeLevel}** ELL student. Bold key vocabulary words.`;
+            }
+
+            return {
+                system: `You are a pedagogical expert and tutor. Follow these instructions precisely. The content must be 100% aligned to this standard's text: [${fullStandardText}]. You may use creative scenarios and examples if they benefit student academic understanding. ${storyStyle}`,
+                user: `Based on the FL Standard ${standardCode}: ${storyRules}`
+            };
+        }
+
+        function getAssignmentInstructions(standardCode, format, level, count, gradeLevel, fullStandardText) { 
+            let assignmentType = "";
+            let difficulty = "";
+            const gradeInstruction = `The content must be appropriate for a **${gradeLevel}** student.`;
+
+            switch (level) {
+                case 'Advanced':
+                    difficulty = "Generate questions/items at Depth of Knowledge (DOK) level 3 or 4, requiring synthesis, analysis, and evaluation. Use complex, academic vocabulary.";
+                    break;
+                case 'Developing':
+                    difficulty = "Generate questions/items at Depth of Knowledge (DOK) level 1 or 2, focusing on recall, application, and basic understanding. Provide generous contextual clues.";
+                    break;
+                case 'ELL':
+                    difficulty = "Generate questions/items using the absolute simplest grammar and vocabulary. Questions must be brief, short, and highly chunked. The focus is on basic identification.";
+                    break;
+                case 'On-Level':
+                default:
+                    difficulty = `Generate questions/items appropriate for a typical ${gradeLevel} student, balanced across DOK levels 2 and 3.`;
+            }
+
+            switch (format) {
+                case 'MCQ':
+                    assignmentType = `Generate a Multiple Choice Quiz with exactly ${count} questions. Each question must have four options (A, B, C, D) and a single correct answer.`;
+                    break;
+                case 'ConceptMap':
+                    assignmentType = `Generate a list of exactly ${count} core concepts related to the standard. For each concept, provide a concise, differentiated definition (the 'Map' structure). No quiz questions.`;
+                    break;
+                case 'TDQs':
+                    assignmentType = `Generate exactly ${count} Text-Dependent Questions (TDQs) based on the story/text. The TDQs MUST mirror the style of the FL FAST Reading Test, including multi-part questions or questions requiring evidence.`;
+                    break;
+                case 'Mixed':
+                    const halfCount = Math.floor(count / 2);
+                    assignmentType = `Generate a Mixed Assignment. It must contain ${halfCount} Multiple Choice Questions (A, B, C, D and a single correct answer) AND ${Math.ceil(count / 2)} longer Short Answer/Open-Ended Questions.`;
+                    break;
+            }
+
+            return {
+                system: `You are a pedagogical expert specializing in Florida B.E.S.T. Standards. ${gradeInstruction} The content must be 100% aligned to this standard's text: [${fullStandardText}]. You may use creative scenarios and examples if they benefit student academic understanding. Generate ${format} content based on the standard ${standardCode}. You MUST follow the JSON schema. Be culturally responsible. Differentiation: ${difficulty}`,
+                user: `FL Standard: ${standardCode}. Task: ${assignmentType}`
+            };
+        }
+
+        function getPayloadAndSchema(standardCode, format, level, count, gradeLevel, fullStandardText) { 
+            const instructions = getAssignmentInstructions(standardCode, format, level, count, gradeLevel, fullStandardText);
+            let schema;
+
+            switch (format) {
+                case 'MCQ': schema = quizSchema(count); break;
+                case 'ConceptMap': schema = conceptMapSchema(count); break;
+                case 'TDQs': schema = tdqSchema(count); break;
+                case 'Mixed': schema = mixedSchema(count); break;
+                default: throw new Error("Invalid format selected.");
+            }
+
+            return {
+                payload: {
+                    contents: [{ parts: [{ text: instructions.user }] }],
+                    systemInstruction: { parts: [{ text: instructions.system }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: schema
+                    }
+                },
+                schema: schema
+            };
+        }
+
+        function getAnalysisPrompt(standardCode, gradeLevel, fullStandardText, rawData) {
+            const system = `You are a Master Pedagogical Data Analyst and Curriculum Consultant. Your task is to analyze the provided raw student performance data against the standard. Your output MUST strictly follow the JSON schema. Be flexible: if raw student names/IDs or specific error patterns are not found, use 'N/A' in the corresponding fields. Your ultimate goal is to provide concise, actionable remediation steps for the teacher. The standard's context is: [${fullStandardText}].`;
+            
+            const user = `Analyze the following raw performance data for the standard ${standardCode} (Grade ${gradeLevel}):\n\nRaw Data:\n${rawData}\n\nProvide the required mastery band, findings, and pedagogical recommendations.`;
+
+            return {
+                system: system,
+                user: user,
+                schema: analysisSchema
+            };
+        }
+        
+        // --- 4. FIREBASE LOGIC (From firebase.js) ---
+        
+        let auth;
+        let db;
+
+        function initializeAuth() {
+            const app = window.firebase.initializeApp(firebaseConfig);
+            auth = window.firebase.getAuth(app);
+            db = window.firebase.getFirestore(app);
+        }
+
+        function handleGoogleSignIn() {
+            const provider = new window.firebase.GoogleAuthProvider();
+            return window.firebase.signInWithPopup(auth, provider);
+        }
+
+        function handleSignOut() {
+            return window.firebase.signOut(auth);
+        }
+
+        function setupAuthStateListener(onSuccess, onFailure) {
+            window.firebase.onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    onSuccess(user);
+                } else {
+                    onFailure();
+                }
+            });
+        }
+
+        function setupStandardsListener(userId, onUpdate) {
+            const standardsRef = window.firebase.doc(db, `users/${userId}/standards/current`);
+
+            window.firebase.onSnapshot(standardsRef, (docSnap) => {
+                if (docSnap.exists() && docSnap.data().data) {
+                    onUpdate(JSON.parse(docSnap.data().data));
+                } else {
+                    onUpdate(null); // No custom data
+                }
+            }, (error) => {
+                console.error("Error listening to standards:", error);
+                onUpdate(null);
+            });
+        }
+
+        async function saveStandardsToFirestore(userId, jsonData) {
+            try {
+                const standardsRef = window.firebase.doc(db, `users/${userId}/standards/current`);
+                await window.firebase.setDoc(standardsRef, {
+                    data: JSON.stringify(jsonData),
+                    timestamp: new Date().toISOString()
+                });
+                console.log("Standards saved to Firestore.");
+            } catch (e) {
+                console.error("Error saving standards:", e);
+                DOMElements['file-status'].textContent = "Error saving file. Check console.";
+            }
+        }
+        
+        // --- 5. UI LOGIC (From ui.js) ---
+        
+        // FIX: This must be *declared* before it is used.
+        const DOMElements = {};
+
+        function cacheDOMElements() {
+            const ids = [
+                'app-container', 'subject-select', 'grade-select', 'standard-select', 
+                'format-select', 'level-select', 'count-select', 'generate-button', 
+                'analyze-button', 'output-card', 'loading-indicator', 'story-content', 
+                'assignment-output', 'error-message', 'standards-file', 'file-status', 
+                'login-container', 'login-button', 'login-status', 'user-welcome',
+                'tab-content', 'tab-data', 'section-content', 'section-data', 
+                'raw-data-input', 'analysis-output', 'mastery-dashboard', 'ai-insights',
+                'sign-out-button'
+            ];
+            ids.forEach(id => {
+                DOMElements[id] = document.getElementById(id);
+            });
+        }
+
+        function switchTab(target) {
+            if (target === 'content') {
+                DOMElements['section-content'].classList.remove('hidden');
+                DOMElements['section-data'].classList.add('hidden');
+                DOMElements['tab-content'].classList.replace('bg-gray-100', 'bg-indigo-600');
+                DOMElements['tab-content'].classList.replace('text-gray-700', 'text-white');
+                DOMElements['tab-data'].classList.replace('bg-indigo-600', 'bg-gray-100');
+                DOMElements['tab-data'].classList.replace('text-white', 'text-gray-700');
+            } else {
+                DOMElements['section-content'].classList.add('hidden');
+                DOMElements['section-data'].classList.remove('hidden');
+                DOMElements['tab-data'].classList.replace('bg-gray-100', 'bg-indigo-600');
+                DOMElements['tab-data'].classList.replace('text-gray-700', 'text-white');
+                DOMElements['tab-content'].classList.replace('bg-indigo-600', 'bg-gray-100');
+                DOMElements['tab-content'].classList.replace('text-white', 'text-gray-700');
+            }
+            DOMElements['output-card'].classList.add('hidden'); 
+            DOMElements['error-message'].classList.add('hidden');
+        }
+
+        function setLoadingState(isLoading, message = "Generating...") {
+            if (isLoading) {
+                DOMElements['loading-indicator'].classList.remove('hidden');
+                DOMElements['loading-indicator'].querySelector('p').textContent = message;
+                DOMElements['error-message'].classList.add('hidden');
+                DOMElements['story-content'].innerHTML = '';
+                DOMElements['assignment-output'].innerHTML = '';
+                DOMElements['analysis-output'].classList.add('hidden');
+                DOMElements['generate-button'].disabled = true;
+                DOMElements['analyze-button'].disabled = true;
+            } else {
+                DOMElements['loading-indicator'].classList.add('hidden');
+                DOMElements['generate-button'].disabled = false;
+                DOMElements['analyze-button'].disabled = false;
+                DOMElements['generate-button'].textContent = 'Generate Differentiated Content';
+                DOMElements['analyze-button'].textContent = 'Analyze Data & Generate Report';
+            }
+        }
+
+        function setErrorMessage(message) {
+            DOMElements['error-message'].textContent = message;
+            DOMElements['error-message'].classList.remove('hidden');
+        }
+
+        function populateSubjectDropdown(standardsData) {
+            const subjectSelect = DOMElements['subject-select'];
+            const currentSubject = subjectSelect.value;
+            subjectSelect.innerHTML = ''; 
+            
+            Object.keys(standardsData).forEach(subject => {
+                const option = document.createElement('option');
+                option.value = subject;
+                option.textContent = subject;
+                subjectSelect.appendChild(option);
+            });
+            
+            if (standardsData[currentSubject]) {
+                subjectSelect.value = currentSubject;
+            }
+        }
+
+        function populateStandardDropdown(standardsData, subject) {
+            const standardSelect = DOMElements['standard-select'];
+            standardSelect.innerHTML = '';
+            standardSelect.disabled = true;
+
+            const standardsList = (standardsData[subject] && standardsData[subject].standards) ? standardsData[subject].standards : [];
+            
+            if (standardsList.length > 0) {
+                standardsList.forEach(std => {
+                    const option = document.createElement('option');
+                    option.value = std.code;
+                    const desc = std.desc || std.name || 'No Description';
+                    option.textContent = `${std.code}: ${desc.substring(0, 40)}...`;
+                    standardSelect.appendChild(option);
+                });
+                standardSelect.disabled = false;
+            } else {
+                standardSelect.innerHTML = `<option value="" disabled selected>No standards for ${subject}</option>`;
+            }
+        }
+
+        function renderStory(text, level) { 
+            let formattedText = text;
+            let title = "The Friendly Nag (Story & Context)";
+            let visualAid = "";
+
+            if (level === 'ELL') {
+                const visualMatch = text.match(/Visual Aid Suggestion:\s*(.*)/i);
+                if (visualMatch && visualMatch[1]) {
+                    visualAid = `<p class="mt-4 p-3 border-l-4 border-yellow-500 bg-yellow-50 text-yellow-800">
+                        <strong>Visual Aid Suggestion for Teacher:</strong> ${visualMatch[1].trim()}
+                        <span class="block text-xs mt-1">(Use this simple picture to help explain the main idea with minimal language.)</span>
+                    </p>`;
+                    formattedText = text.replace(visualMatch[0], '').trim();
+                }
+                title = "The Friendly Nag (Simple ELL Narrative)";
+            }
+
+            DOMElements['story-content'].innerHTML = `
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">${title}</h3>
+                <div class="p-4 rounded-lg bg-gray-50 text-gray-700">
+                    ${formattedText.split('\n\n').map(p => `<p class="mb-2">${p}</p>`).join('')}
+                    ${visualAid}
+                </div>
+    `;
+        }
+
+        function renderAssignment(data, format) { 
+            const assignmentContent = DOMElements['assignment-output'];
+            assignmentContent.innerHTML = '';
+            let html = `<h3 class="text-xl font-semibold text-gray-800 mb-4">${data.assignmentTitle || data.title || format} <span class="text-sm font-medium text-indigo-500">(${data.level})</span></h3>`;
+
+            const renderQuestionList = (questions, isLonger) => {
+                return questions.map((q, index) => {
+                    let optionsHtml = '';
+                    let footerHtml = '';
+                    const qIndex = isLonger ? index + 1 : index + 1;
+
+                    if (q.options) {
+                        optionsHtml = ['A', 'B', 'C', 'D'].map(key => `
+                            <li class="p-3 mb-2 rounded-lg transition duration-100 border border-gray-200 ${q.correctAnswer === key ? 'bg-green-50' : ''}">
+                                <span class="font-bold mr-2 text-indigo-600">${key}.</span>
+                                ${q.options[key]}
+                            </li>
+                        `).join('');
+                        footerHtml += `<p class="mt-3 text-sm font-medium text-green-700">Correct Answer: ${q.correctAnswer}</p>`;
+                    } else if (q.requiredLength) {
+                        footerHtml += `<p class="text-sm text-gray-500 mt-1">Required Length: ${q.requiredLength}</p>`;
+                    }
+                    
+                    if (q.complexity) {
+                        footerHtml += `<p class="text-sm text-gray-500 mt-1">Complexity: DOK ${q.complexity}</p>`;
+                    }
+
+                    return `
+                        <div class="p-5 bg-white rounded-xl border border-gray-100 shadow-sm mb-4">
+                            <p class="text-lg font-semibold text-gray-800 mb-3">${isLonger ? 'Prompt' : 'Question'} ${qIndex}: ${q.questionText || q.prompt || q.question}</p>
+                            ${optionsHtml ? `<ul class="space-y-1 text-gray-700 text-sm list-none">${optionsHtml}</ul>` : ''}
+                            ${footerHtml}
+                        </div>
+                    `;
+                }).join('');
+            };
+
+            if (format === 'MCQ' && data.questions) {
+                html += `<div class="space-y-6">${renderQuestionList(data.questions, false)}</div>`;
+            }
+            else if (format === 'ConceptMap' && data.concepts) {
+                html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+                data.concepts.forEach((c, index) => {
+                    html += `
+                        <div class="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
+                            <p class="text-lg font-bold text-indigo-700 mb-1">${index + 1}. ${c.concept}</p>
+                            <p class="text-gray-700">${c.definition}</p>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+            else if (format === 'TDQs' && data.story && data.questions) {
+                html += `<div class="p-5 bg-gray-50 rounded-xl mb-6">
+                            <h4 class="text-lg font-bold mb-2 text-gray-800">Source Text:</h4>
+                            <div class="text-gray-700 whitespace-pre-wrap">${data.story}</div>
+                        </div>`;
+                html += `<div class="space-y-6">${renderQuestionList(data.questions, false)}</div>`;
+            }
+            else if (format === 'Mixed' && data.mcqs && data.longerQuestions) {
+                html += `<h4 class="text-xl font-bold mt-6 mb-4 text-gray-800">Multiple Choice Questions (Differentiated)</h4>`;
+                html += renderQuestionList(data.mcqs, false);
+                html += `<h4 class="text-xl font-bold mt-10 mb-4 text-gray-800">Short Answer/Extended Response (Differentiated)</h4>`;
+                html += renderQuestionList(data.longerQuestions, true);
+            }
+            else {
+                html = `<p class="text-red-500">Error: Could not render structured content.</p>`;
+            }
+            assignmentContent.innerHTML = html;
+        }
+
+        function renderAnalysisReport(data, standardCode) {
+            const getCardClass = (band) => {
+                if (band === 'High Mastery') return 'bg-green-100 text-green-800 border-green-500';
+                if (band === 'Proficient') return 'bg-indigo-100 text-indigo-800 border-indigo-500';
+                if (band === 'Developing') return 'bg-yellow-100 text-yellow-800 border-yellow-500';
+                return 'bg-red-100 text-red-800 border-red-500';
+            };
+
+            DOMElements['mastery-dashboard'].innerHTML = `
+                <div class="p-4 rounded-xl border-l-4 ${getCardClass(data.masteryBand.band)}">
+                    <p class="text-sm font-medium">Overall Class Mastery Band</p>
+                    <p class="text-3xl font-bold">${data.masteryBand.band}</p>
+                    <p class="mt-1">${data.masteryBand.summary}</p>
+                    <p class="text-xs mt-2">Approximate Average Score: ${data.masteryBand.score}</p> 
+                </div>
+                <div class="p-4 rounded-xl bg-gray-100 border-l-4 border-gray-400 md:col-span-2">
+                    <p class="text-sm font-medium text-gray-700">Standard Analyzed</p>
+                    <p class="text-lg font-bold">${standardCode}</p>
+                    <p class="text-xs mt-1 text-gray-600">Grade ${DOMElements['grade-select'].value} - Subject ${DOMElements['subject-select'].value}</p>
+                </div>
+            `;
+
+            DOMElements['ai-insights'].innerHTML = `
+                <div class="p-5 border border-gray-200 rounded-xl">
+                    <h4 class="text-lg font-bold text-gray-800 mb-2">General Pedagogical Findings</h4>
+                    <p class="text-gray-700">${data.generalInsights}</p>
+                </div>
+                <div class="p-5 border border-gray-200 rounded-xl">
+                    <h4 class="text-lg font-bold text-gray-800 mb-2">Specific Class Deficits (Fuzzy Concepts/Variations)</h4>
+                    <p class="text-gray-700">${data.classFindings}</p>
+                </div>
+                <div class="p-5 border border-gray-200 rounded-xl">
+                    <h4 class="text-lg font-bold text-gray-800 mb-2">Actionable Remediation Recommendations</h4>
+                    <p class="text-gray-700">${data.pedagogicalRecommendations}</p>
+                </div>
+                <div class="p-5 border border-gray-200 rounded-xl">
+                    <h4 class="text-lg font-bold text-red-700 mb-2">Individual Intervention Flags</h4>
+                    <p class="text-red-700">${data.individualFlags}</p>
+                </div>
+            `;
+        }
+        
+        // --- 6. APP CONTROLLER (From app.js) ---
+        
+        // This is the main controller that connects all the pieces.
+        
+        function initializeApp() {
+            // FIX: Cache elements FIRST
+            cacheDOMElements(); 
+            
+            // Attach all event listeners
+            DOMElements['tab-content'].addEventListener('click', () => switchTab('content'));
+            DOMElements['tab-data'].addEventListener('click', () => switchTab('data'));
+            DOMElements['subject-select'].addEventListener('change', () => populateStandardDropdown(loadedStandardsData, DOMElements['subject-select'].value));
+            DOMElements['standards-file'].addEventListener('change', handleFileUpload);
+            DOMElements['generate-button'].addEventListener('click', handleGenerateContent);
+            DOMElements['analyze-button'].addEventListener('click', handleAnalyzeData);
+            DOMElements['login-button'].addEventListener('click', onLoginClick);
+            DOMElements['sign-out-button'].addEventListener('click', onSignOutClick);
+
+            // Start Firebase Auth
+            initializeAuth(); 
+            setupAuthStateListener(onAuthSuccess, onAuthFailure);
+        }
+
+        async function onLoginClick() {
+            try {
+                DOMElements['login-status'].textContent = "Opening Google Sign-in...";
+                await handleGoogleSignIn();
+                // onAuthStateChanged will handle success
+            } catch (error) {
+                console.error("Google Sign-In Error:", error);
+                DOMElements['login-status'].textContent = `Sign-in failed: ${error.message}`;
+            }
+        }
+
+        async function onSignOutClick() {
+            try {
+                await handleSignOut();
+                // onAuthStateChanged will handle failure
+            } catch (error) {
+                console.error("Sign Out Error:", error);
+            }
+        }
+
+        function onAuthSuccess(user) {
+            firebaseReady = true;
+            currentUserId = user.uid;
+            
+            DOMElements['login-container'].style.display = 'none';
+            DOMElements['app-container'].style.display = 'block';
+            DOMElements['user-welcome'].textContent = `Welcome, ${user.displayName || 'User'}!`;
+            
+            DOMElements['generate-button'].disabled = false;
+            DOMElements['analyze-button'].disabled = false;
+            DOMElements['generate-button'].textContent = 'Generate Differentiated Content';
+            DOMElements['analyze-button'].textContent = 'Analyze Data & Generate Report';
+
+            loadedStandardsData = initialStandardsImport;
+            setupStandardsListener(currentUserId, onStandardsUpdate);
+            populateSubjectDropdown(loadedStandardsData);
+            populateStandardDropdown(loadedStandardsData, DOMElements['subject-select'].value);
+        }
+
+        function onAuthFailure() {
+            firebaseReady = false;
+            currentUserId = null;
+            DOMElements['login-container'].style.display = 'block';
+            DOMElements['app-container'].style.display = 'none';
+        }
+
+        function onStandardsUpdate(data) {
+            if (data) {
+                loadedStandardsData = data;
+                DOMElements['file-status'].textContent = `Custom standards loaded successfully.`;
+                DOMElements['file-status'].classList.replace('text-red-500', 'text-green-600');
+            } else {
+                loadedStandardsData = initialStandardsImport;
+                DOMElements['file-status'].textContent = 'Using embedded standards data. Upload a file to save custom data.';
+                DOMElements['file-status'].classList.replace('text-red-500', 'text-gray-500'); 
+            }
+            populateSubjectDropdown(loadedStandardsData);
+            populateStandardDropdown(loadedStandardsData, DOMElements['subject-select'].value);
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file || !firebaseReady) return;
+            const reader = new FileReader();
+            reader.onload = (e_load) => {
+                try {
+                    const jsonData = JSON.parse(e_load.target.result);
+                    if (typeof jsonData !== 'object' || Array.isArray(jsonData)) {
+                         throw new Error("Invalid JSON structure. Must be an object of subjects.");
+                    }
+                    saveStandardsToFirestore(currentUserId, jsonData);
+                } catch (error) {
+                    DOMElements['file-status'].textContent = `File Error: ${error.message}`;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        async function fetchWithRetries(payload, maxRetries = 3) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        throw new Error(`API error! Status: ${response.status}. Body: ${errorBody}`);
+                    }
+                    
+                    return response.json(); 
+
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        throw new Error(`API failed after ${maxRetries} attempts: ${error.message}`);
+                    }
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        function getInputs() {
+            return {
+                standardCode: DOMElements['standard-select'].value,
+                subject: DOMElements['subject-select'].value,
+                gradeLevel: DOMElements['grade-select'].value,
+                format: DOMElements['format-select'].value,
+                level: DOMElements['level-select'].value,
+                count: parseInt(DOMElements['question-count'].value),
+                rawData: DOMElements['raw-data-input'].value.trim()
+            };
+        }
+
+        function getFullStandardText(standardCode, subject) { 
+            const standards = loadedStandardsData[subject];
+            if (!standards) {
+                return `Standard text not found for ${standardCode}. Generating based on code only.`;
+            }
+            
+            // FIX: Access the nested .standards array
+            const standardsList = standards.standards || [];
+            const standard = standardsList.find(s => s.code === standardCode);
+            
+            if (!standard) {
+                return `Standard text not found for ${standardCode}. Generating based on code only.`;
+            }
+            
+            if (standard.full_text) return standard.full_text;
+            
+            let fullText = standard.name || standard.desc; 
+            
+            if (standard.internal?.clarifications) {
+                fullText += " | CLARIFICATIONS: " + standard.internal.clarifications.join('; ');
+            }
+            if (standard.internal?.objectives) {
+                fullText += " | OBJECTIVES: " + standard.internal.objectives.join('; ');
+            }
+            return fullText;
+        }
+
+        async function handleGenerateContent() {
+            if (!firebaseReady) { setErrorMessage('ERROR: Secure session not active.'); return; }
+            
+            const { standardCode, subject, gradeLevel, format, level, count } = getInputs();
+            if (!standardCode) { setErrorMessage('Please select a standard code.'); return; }
+
+            setLoadingState(true, 'Generating... (Step 1 of 2: Story)');
+            DOMElements['output-card'].classList.remove('hidden');
+            DOMElements['story-content'].style.display = 'block';
+            DOMElements['assignment-output'].style.display = 'block';
+            DOMElements['analysis-output'].style.display = 'none';
+
+            try {
+                const fullStandardText = getFullStandardText(standardCode, subject);
+                
+                const storyInstructions = getStoryPrompt(standardCode, level, gradeLevel, fullStandardText); 
+                let storyPayload = {
+                    contents: [{ parts: [{ text: storyInstructions.user }] }],
+                    systemInstruction: { parts: [{ text: storyInstructions.system }] }
+                };
+
+                let result = await fetchWithRetries(storyPayload);
+                let storyText = result.candidates?.[0]?.content?.parts?.[0]?.text || "Error: Could not generate narrative context.";
+                renderStory(storyText, level);
+
+                setLoadingState(true, 'Generating... (Step 2 of 2: Assignment)');
+
+                const { payload } = getPayloadAndSchema(standardCode, format, level, count, gradeLevel, fullStandardText); 
+
+                result = await fetchWithRetries(payload);
+                const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!jsonString) {
+                    throw new Error("Model failed to return structured JSON for the assignment.");
+                }
+
+                const assignmentData = JSON.parse(jsonString);
+                renderAssignment(assignmentData, format);
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                setErrorMessage(`Error generating content: ${error.message}.`);
+            } finally {
+                setLoadingState(false);
+            }
+        }
+
+        async function handleAnalyzeData() {
+            if (!firebaseReady) { setErrorMessage('ERROR: Secure session not active.'); return; }
+            
+            const { standardCode, gradeLevel, rawData, subject } = getInputs();
+            if (!standardCode || !rawData) {
+                setErrorMessage('Please select a standard code AND paste raw performance data.');
+                return;
+            }
+            
+            setLoadingState(true, 'Analyzing Data...');
+            DOMElements['output-card'].classList.remove('hidden');
+            DOMElements['story-content'].style.display = 'none';
+            DOMElements['assignment-output'].style.display = 'none';
+            DOMElements['analysis-output'].style.display = 'block';
+
+            try {
+                const fullStandardText = getFullStandardText(standardCode, subject);
+                const { user, system, schema } = getAnalysisPrompt(standardCode, gradeLevel, fullStandardText, rawData);
+
+                const analysisPayload = {
+                    contents: [{ parts: [{ text: user }] }],
+                    systemInstruction: { parts: [{ text: system }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: schema
+                    }
+                };
+
+                const result = await fetchWithRetries(analysisPayload);
+                const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!jsonString) {
+                    throw new Error("Model failed to return structured JSON for the analysis.");
+                }
+
+                const analysisData = JSON.parse(jsonString);
+                renderAnalysisReport(analysisData, standardCode);
+
+            } catch (error) {
+                console.error("Gemini API Error (Analysis):", error);
+                setErrorMessage(`Error during analysis: ${error.message}.`);
+            } finally {
+                setLoadingState(false);
+            }
+        }
+
+        // --- APP ENTRY POINT (From main.js) ---
+        // This listener ensures the HTML is loaded before we try to find elements
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+        });
+
+    </script>
 </body>
 </html>
+```
+
+---
+
+### 2. `netlify.toml`
+*(This file tells Netlify how to deploy. It is correct.)*
+
+```toml
+[build]
+  # We still have no build command for the main site
+  command = ""
+  # We still publish the root directory where index.html is
+  publish = "."
+
+[functions]
+  # Tell Netlify to look for serverless functions in this directory
+  directory = "netlify/functions/"
